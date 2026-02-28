@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Abstractions\SharpClaw.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Protocol.Contracts\SharpClaw.Protocol.Contracts.csproj" />
+    <ProjectReference Include="..\SharpClaw.Protocol.Abstractions\SharpClaw.Protocol.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Identity\SharpClaw.Identity.csproj" />
+    <ProjectReference Include="..\SharpClaw.Conversations\SharpClaw.Conversations.csproj" />
+    <ProjectReference Include="..\SharpClaw.Runs\SharpClaw.Runs.csproj" />
+    <ProjectReference Include="..\SharpClaw.Approvals\SharpClaw.Approvals.csproj" />
+    <ProjectReference Include="..\SharpClaw.Configuration\SharpClaw.Configuration.csproj" />
+    <ProjectReference Include="..\SharpClaw.Operations\SharpClaw.Operations.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

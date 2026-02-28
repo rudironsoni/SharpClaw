@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Extensions.DependencyInjection\SharpClaw.Extensions.DependencyInjection.csproj" />
+    <ProjectReference Include="..\SharpClaw.Extensions.Hosting\SharpClaw.Extensions.Hosting.csproj" />
+    <ProjectReference Include="..\SharpClaw.Web\SharpClaw.Web.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

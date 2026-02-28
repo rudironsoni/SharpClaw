@@ -1,0 +1,31 @@
+# Build artifacts
+**/bin/
+**/obj/
+TestResults/
+
+# IDE and tooling
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Local agent/tool state
+.agent/
+.agents/
+.beads/
+.claude/
+.codex/
+.gemini/
+.opencode/
+.rulesync/
+.serena/
+
+# Generated local configs
+.geminiignore
+.mcp.json
+opencode.json
+
+# OS files
+.DS_Store
+Thumbs.db

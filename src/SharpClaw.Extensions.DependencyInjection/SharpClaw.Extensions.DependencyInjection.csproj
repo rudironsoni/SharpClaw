@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Gateway\SharpClaw.Gateway.csproj" />
+    <ProjectReference Include="..\SharpClaw.Identity\SharpClaw.Identity.csproj" />
+    <ProjectReference Include="..\SharpClaw.Conversations\SharpClaw.Conversations.csproj" />
+    <ProjectReference Include="..\SharpClaw.Runs\SharpClaw.Runs.csproj" />
+    <ProjectReference Include="..\SharpClaw.Approvals\SharpClaw.Approvals.csproj" />
+    <ProjectReference Include="..\SharpClaw.Configuration\SharpClaw.Configuration.csproj" />
+    <ProjectReference Include="..\SharpClaw.Operations\SharpClaw.Operations.csproj" />
+    <ProjectReference Include="..\SharpClaw.HttpApi\SharpClaw.HttpApi.csproj" />
+    <ProjectReference Include="..\SharpClaw.OpenResponses.HttpApi\SharpClaw.OpenResponses.HttpApi.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.SandboxManager\SharpClaw.Execution.SandboxManager.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Docker\SharpClaw.Execution.Docker.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Podman\SharpClaw.Execution.Podman.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Daytona\SharpClaw.Execution.Daytona.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Kubernetes\SharpClaw.Execution.Kubernetes.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Sqlite\SharpClaw.Persistence.Sqlite.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Postgres\SharpClaw.Persistence.Postgres.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

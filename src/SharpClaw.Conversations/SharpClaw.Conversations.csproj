@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Abstractions\SharpClaw.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Protocol.Contracts\SharpClaw.Protocol.Contracts.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Abstractions\SharpClaw.Persistence.Abstractions.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
