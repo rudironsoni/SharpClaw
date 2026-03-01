@@ -41,12 +41,13 @@ public class DaytonaProviderWireMockTests : IDisposable
         );
 
         // Act
-        var handle = await _manager.StartDefaultAsync(Guid.NewGuid().ToString("N"));
+        var runId = Guid.NewGuid().ToString("N");
+        var handle = await _manager.StartDefaultAsync(runId);
 
         // Assert
         Assert.Equal("daytona", handle.Provider);
         Assert.Equal("mock-workspace-123", handle.SandboxId);
-        Assert.True(_manager.IsActive(handle.SandboxId));
+        Assert.True(_manager.IsActive(runId));
     }
 
     [Fact]
@@ -79,13 +80,14 @@ public class DaytonaProviderWireMockTests : IDisposable
             Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "mock-workspace-123", state = "running" })
         );
 
-        var handle = await _manager.StartDefaultAsync(Guid.NewGuid().ToString("N"));
+        var runId = Guid.NewGuid().ToString("N");
+        var handle = await _manager.StartDefaultAsync(runId);
 
         // Act
-        await _manager.StopSandboxAsync(handle.SandboxId);
+        await _manager.StopSandboxAsync(runId);
 
         // Assert
-        Assert.False(_manager.IsActive(handle.SandboxId));
+        Assert.False(_manager.IsActive(runId));
         
         var logs = _server.LogEntries;
         Assert.Contains(logs, l => l.RequestMessage.Path == "/api/workspaces/mock-workspace-123/stop" && l.RequestMessage.Method == "POST");

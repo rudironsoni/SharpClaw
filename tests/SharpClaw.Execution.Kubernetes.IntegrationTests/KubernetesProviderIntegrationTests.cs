@@ -1,46 +1,85 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpClaw.Execution.Kubernetes;
 using SharpClaw.Execution.SandboxManager;
+using SharpClaw.TestCommon;
 
 namespace SharpClaw.Execution.Kubernetes.IntegrationTests;
 
-public class KubernetesProviderIntegrationTests
+public class KubernetesProviderIntegrationTests : IAsyncLifetime
 {
+    private readonly KubernetesApiContainerFixture _fixture = new();
+    private SandboxManagerService? _manager;
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.StartAsync();
+
+        var provider = new KubernetesSandboxProvider(
+            NullLogger<KubernetesSandboxProvider>.Instance,
+            kubeConfigPath: _fixture.KubeConfigPath,
+            @namespace: "default");
+
+        _manager = new SandboxManagerService(
+            [provider],
+            NullLogger<SandboxManagerService>.Instance,
+            defaultProvider: "kubernetes");
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _fixture.DisposeAsync();
+    }
+
     [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_UsesKubernetesWhenConfiguredAsDefault()
     {
-        var manager = new SandboxManagerService([new KubernetesSandboxProvider(NullLogger<KubernetesSandboxProvider>.Instance)], Microsoft.Extensions.Logging.Abstractions.NullLogger<SharpClaw.Execution.SandboxManager.SandboxManagerService>.Instance, defaultProvider: "kubernetes");
+        ArgumentNullException.ThrowIfNull(_manager);
 
         var runId = Guid.NewGuid().ToString("N");
-        var handle = await manager.StartDefaultAsync(runId);
+        var handle = await _manager.StartDefaultAsync(runId);
 
         Assert.Equal("kubernetes", handle.Provider);
-        Assert.StartsWith("k8s-runc-", handle.SandboxId, StringComparison.Ordinal);
-        Assert.True(manager.IsActive(runId));
+        Assert.StartsWith("sharpclaw-", handle.SandboxId, StringComparison.Ordinal);
+        Assert.True(_manager.IsActive(runId));
     }
 
     [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_RejectsDockerSocketMount()
     {
-        var manager = new SandboxManagerService([new KubernetesSandboxProvider(NullLogger<KubernetesSandboxProvider>.Instance)], Microsoft.Extensions.Logging.Abstractions.NullLogger<SharpClaw.Execution.SandboxManager.SandboxManagerService>.Instance, defaultProvider: "kubernetes");
+        ArgumentNullException.ThrowIfNull(_manager);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            manager.StartDefaultAsync(Guid.NewGuid().ToString("N"), ["/var/run/docker.sock:/var/run/docker.sock"]));
+            _manager.StartDefaultAsync(Guid.NewGuid().ToString("N"), ["/var/run/docker.sock:/var/run/docker.sock"]));
     }
 
     [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_UsesKataRuntimeClass_ForSensitivePolicy()
     {
-        var provider = new KubernetesSandboxProvider(
-            NullLogger<KubernetesSandboxProvider>.Instance,
-            policy: new KubernetesRuntimeClassPolicy(EnableKataForSensitive: true));
-        var manager = new SandboxManagerService([provider], Microsoft.Extensions.Logging.Abstractions.NullLogger<SharpClaw.Execution.SandboxManager.SandboxManagerService>.Instance, defaultProvider: "kubernetes");
+        ArgumentNullException.ThrowIfNull(_manager);
 
-        var handle = await manager.StartDefaultAsync(Guid.NewGuid().ToString("N"));
+        var runId = Guid.NewGuid().ToString("N");
+        var handle = await _manager.StartDefaultAsync(runId);
 
-        Assert.StartsWith("k8s-kata-", handle.SandboxId, StringComparison.Ordinal);
+        Assert.Equal("kubernetes", handle.Provider);
+        Assert.True(_manager.IsActive(runId));
+        Assert.True(await _fixture.HasRequestAsync("POST", "/api/v1/namespaces/default/pods"));
+    }
+
+    [Fact]
+    [Trait("Category", "ExternalInfrastructure")]
+    public async Task StopAsync_CallsKubernetesApiToDeletePod()
+    {
+        ArgumentNullException.ThrowIfNull(_manager);
+
+        var runId = Guid.NewGuid().ToString("N");
+        var handle = await _manager.StartDefaultAsync(runId);
+
+        await _manager.StopSandboxAsync(runId);
+
+        Assert.False(_manager.IsActive(runId));
+        Assert.True(await _fixture.HasRequestAsync("DELETE", $"/api/v1/namespaces/default/pods/{handle.SandboxId}"));
     }
 }

@@ -72,12 +72,13 @@ users:
         );
 
         // Act
-        var handle = await _manager.StartDefaultAsync(Guid.NewGuid().ToString("N"));
+        var runId = Guid.NewGuid().ToString("N");
+        var handle = await _manager.StartDefaultAsync(runId);
 
         // Assert
         Assert.Equal("kubernetes", handle.Provider);
         Assert.StartsWith("sharpclaw-", handle.SandboxId);
-        Assert.True(_manager.IsActive(handle.SandboxId));
+        Assert.True(_manager.IsActive(runId));
     }
 
     [Fact]
@@ -105,13 +106,14 @@ users:
             Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json").WithBody(runningPodJson)
         );
 
-        var handle = await _manager.StartDefaultAsync(Guid.NewGuid().ToString("N"));
+        var runId = Guid.NewGuid().ToString("N");
+        var handle = await _manager.StartDefaultAsync(runId);
 
         // Act
-        await _manager.StopSandboxAsync(handle.SandboxId);
+        await _manager.StopSandboxAsync(runId);
 
         // Assert
-        Assert.False(_manager.IsActive(handle.SandboxId));
+        Assert.False(_manager.IsActive(runId));
         
         var logs = _server.LogEntries;
         Assert.Contains(logs, l => l.RequestMessage.Path != null && l.RequestMessage.Path.Contains("/api/v1/namespaces/default/pods/") && l.RequestMessage.Method == "DELETE");
