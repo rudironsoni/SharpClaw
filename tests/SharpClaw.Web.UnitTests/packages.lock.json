@@ -254,6 +254,17 @@
           "SharpClaw.Runs": "[0.1.0-alpha, )"
         }
       },
+      "sharpclaw.httpapi": {
+        "type": "Project",
+        "dependencies": {
+          "SharpClaw.Abstractions": "[0.1.0-alpha, )",
+          "SharpClaw.Gateway": "[0.1.0-alpha, )",
+          "SharpClaw.OpenResponses.HttpApi": "[0.1.0-alpha, )",
+          "SharpClaw.Protocol.Contracts": "[0.1.0-alpha, )",
+          "SharpClaw.Tenancy": "[0.1.0-alpha, )",
+          "SharpClaw.Web": "[0.1.0-alpha, )"
+        }
+      },
       "sharpclaw.identity": {
         "type": "Project",
         "dependencies": {
@@ -263,6 +274,14 @@
           "SharpClaw.Persistence.Contracts": "[0.1.0-alpha, )",
           "SharpClaw.Persistence.Core": "[0.1.0-alpha, )",
           "SharpClaw.Protocol.Contracts": "[0.1.0-alpha, )"
+        }
+      },
+      "sharpclaw.openresponses.httpapi": {
+        "type": "Project",
+        "dependencies": {
+          "SharpClaw.Abstractions": "[0.1.0-alpha, )",
+          "SharpClaw.Protocol.Contracts": "[0.1.0-alpha, )",
+          "SharpClaw.Runs": "[0.1.0-alpha, )"
         }
       },
       "sharpclaw.operations": {

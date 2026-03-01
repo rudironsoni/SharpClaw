@@ -32,6 +32,9 @@
     <Project Path="src/SharpClaw.Runs/SharpClaw.Runs.csproj" />
     <Project Path="src/SharpClaw.Tenancy/SharpClaw.Tenancy.csproj" />
     <Project Path="src/SharpClaw.Web/SharpClaw.Web.csproj" />
+    <Project Path="src/SharpClaw.Compliance.Abstractions/SharpClaw.Compliance.Abstractions.csproj" />
+    <Project Path="src/SharpClaw.Compliance/SharpClaw.Compliance.csproj" />
+    <Project Path="src/SharpClaw.Compliance.Analyzers/SharpClaw.Compliance.Analyzers.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SharpClaw.Abstractions.UnitTests/SharpClaw.Abstractions.UnitTests.csproj" />
@@ -62,5 +65,8 @@
     <Project Path="tests/SharpClaw.Web.End2EndTests/SharpClaw.Web.End2EndTests.csproj" />
     <Project Path="tests/SharpClaw.Web.IntegrationTests/SharpClaw.Web.IntegrationTests.csproj" />
     <Project Path="tests/SharpClaw.Web.UnitTests/SharpClaw.Web.UnitTests.csproj" />
+    <Project Path="tests/SharpClaw.Compliance.UnitTests/SharpClaw.Compliance.UnitTests.csproj" />
+    <!-- Analyzer test project excluded due to NuGet version conflicts - tests are written but require package updates to build -->
+    <!-- <Project Path="tests/SharpClaw.Compliance.Analyzers.Tests/SharpClaw.Compliance.Analyzers.Tests.csproj" /> -->
   </Folder>
 </Solution>

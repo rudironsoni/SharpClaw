@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Compliance.Abstractions\SharpClaw.Compliance.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Tenancy\SharpClaw.Tenancy.csproj" />
+    <ProjectReference Include="..\SharpClaw.Abstractions\SharpClaw.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
