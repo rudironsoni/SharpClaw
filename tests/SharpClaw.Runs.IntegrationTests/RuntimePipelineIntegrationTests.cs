@@ -40,7 +40,7 @@ public class RuntimePipelineIntegrationTests
     [Fact]
     public async Task RunCoordinator_CompletesRunAndPublishesTerminalState()
     {
-        var coordinator = new RunCoordinator();
+        var coordinator = TestHelpers.CreateRunCoordinator();
         var started = await coordinator.StartAsync("integration", "idem-77");
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -52,7 +52,7 @@ public class RuntimePipelineIntegrationTests
             }
         }
 
-        var snapshot = coordinator.GetSnapshot(started.RunId);
+        var snapshot = await coordinator.GetSnapshotAsync(started.RunId, "tenant-1");
         Assert.Equal("completed", snapshot.Status);
     }
 

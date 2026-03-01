@@ -1,0 +1,522 @@
+using System.Collections.Concurrent;
+using System.Collections.Frozen;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using SharpClaw.Abstractions.Identity;
+using SharpClaw.Gateway.Events;
+using SharpClaw.Protocol.Contracts;
+using SharpClaw.Runs;
+
+namespace SharpClaw.Gateway;
+
+/// <summary>
+/// Handler delegate for gateway requests with device context.
+/// </summary>
+public delegate Task<ResponseFrame> GatewayRequestHandler(RequestFrame request, DeviceContext deviceContext, CancellationToken cancellationToken);
+
+/// <summary>
+/// Device context containing identity and authorization information.
+/// </summary>
+public sealed record DeviceContext(string DeviceId, IReadOnlySet<string> Scopes, bool IsAuthenticated);
+
+/// <summary>
+/// Gateway dispatcher with method routing, scope enforcement, and event publishing.
+/// </summary>
+public sealed class GatewayDispatcher : IDisposable
+{
+    private readonly ConcurrentDictionary<string, (GatewayRequestHandler Handler, IReadOnlySet<string> RequiredScopes)> _handlers =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ConnectionEventSubscriptions> _connectionSubscriptions = new(StringComparer.Ordinal);
+    private readonly IEventPublisher _eventPublisher;
+    private readonly ILogger<GatewayDispatcher> _logger;
+    private bool _disposed;
+
+    /// <summary>
+    /// Creates a new GatewayDispatcher with event publishing support.
+    /// </summary>
+    public GatewayDispatcher(IEventPublisher eventPublisher, ILogger<GatewayDispatcher> logger)
+    {
+        _eventPublisher = eventPublisher ?? throw new ArgumentNullException(nameof(eventPublisher));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Registers a method handler with required scopes.
+    /// </summary>
+    public void Register(string method, IReadOnlySet<string> requiredScopes, GatewayRequestHandler handler)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+        ArgumentNullException.ThrowIfNull(handler);
+
+        if (!_handlers.TryAdd(method, (handler, requiredScopes)))
+        {
+            throw new InvalidOperationException($"Handler already registered for method '{method}'.");
+        }
+
+        _logger.LogDebug("Registered method '{Method}' with scopes: {Scopes}", method, string.Join(", ", requiredScopes));
+    }
+
+    /// <summary>
+    /// Dispatches a request to the appropriate handler with scope validation.
+    /// </summary>
+    public async Task<ResponseFrame> DispatchAsync(RequestFrame request, DeviceContext deviceContext, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
+        if (!_handlers.TryGetValue(request.Method, out var registration))
+        {
+            _logger.LogWarning("Unknown method '{Method}' requested by device {DeviceId}", request.Method, deviceContext.DeviceId);
+            return new ResponseFrame(
+                request.Id,
+                Ok: false,
+                Error: new ErrorShape(ErrorCodes.MethodNotFound, $"Unknown method: {request.Method}"));
+        }
+
+        var (handler, requiredScopes) = registration;
+
+        // Validate scopes
+        if (requiredScopes.Count > 0)
+        {
+            var missingScopes = requiredScopes
+                .Except(deviceContext.Scopes, StringComparer.OrdinalIgnoreCase)
+                .ToFrozenSet();
+
+            if (missingScopes.Count > 0)
+            {
+                _logger.LogWarning(
+                    "Device {DeviceId} missing required scopes for method '{Method}': {MissingScopes}",
+                    deviceContext.DeviceId,
+                    request.Method,
+                    string.Join(", ", missingScopes));
+
+                return new ResponseFrame(
+                    request.Id,
+                    Ok: false,
+                    Error: new ErrorShape(ErrorCodes.Unavailable, $"Missing required scopes: {string.Join(", ", missingScopes)}"));
+            }
+        }
+
+        _logger.LogDebug(
+            "Dispatching method '{Method}' for device {DeviceId} with scopes: {Scopes}",
+            request.Method,
+            deviceContext.DeviceId,
+            string.Join(", ", deviceContext.Scopes));
+
+        try
+        {
+            var response = await handler(request, deviceContext, cancellationToken).ConfigureAwait(false);
+            return response with { Id = request.Id };
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Let cancellation propagate
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception while executing method '{Method}' for device {DeviceId} (RequestId: {RequestId})", 
+                request.Method, deviceContext.DeviceId, request.Id);
+            
+            return new ResponseFrame(
+                request.Id,
+                Ok: false,
+                Error: new ErrorShape(ErrorCodes.InternalError, "An internal server error occurred."));
+        }
+    }
+
+    /// <summary>
+    /// Publishes an event to the specified topic.
+    /// </summary>
+    public Task PublishEventAsync(string topic, EventFrame eventFrame, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _eventPublisher.PublishAsync(topic, eventFrame, ct);
+    }
+
+    /// <summary>
+    /// Subscribes a connection to events on the specified topic.
+    /// </summary>
+#pragma warning disable IDE0060
+    public Task<bool> SubscribeConnectionAsync(string connectionId, string topic, CancellationToken ct = default)
+#pragma warning restore IDE0060
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (string.IsNullOrWhiteSpace(connectionId))
+            throw new ArgumentException("Connection ID cannot be empty.", nameof(connectionId));
+
+        if (string.IsNullOrWhiteSpace(topic))
+            throw new ArgumentException("Topic cannot be empty.", nameof(topic));
+
+        var subscriptions = _connectionSubscriptions.GetOrAdd(connectionId, _ => new ConnectionEventSubscriptions(connectionId));
+
+        if (subscriptions.AddTopic(topic))
+        {
+            _logger.LogDebug("Connection {ConnectionId} subscribed to topic '{Topic}'", connectionId, topic);
+
+            // Start event streaming for this connection-topic pair
+            _ = StreamEventsToConnectionAsync(connectionId, topic, subscriptions.Cts.Token);
+
+            return Task.FromResult(true);
+        }
+
+        return Task.FromResult(false);
+    }
+
+    /// <summary>
+    /// Unsubscribes a connection from events on the specified topic.
+    /// </summary>
+    public bool UnsubscribeConnection(string connectionId, string topic)
+    {
+        if (!_connectionSubscriptions.TryGetValue(connectionId, out var subscriptions))
+            return false;
+
+        if (subscriptions.RemoveTopic(topic))
+        {
+            _logger.LogDebug("Connection {ConnectionId} unsubscribed from topic '{Topic}'", connectionId, topic);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Removes all event subscriptions for a connection (call on disconnect).
+    /// </summary>
+    public void RemoveConnectionSubscriptions(string connectionId)
+    {
+        if (_connectionSubscriptions.TryRemove(connectionId, out var subscriptions))
+        {
+            subscriptions.Dispose();
+            _logger.LogDebug("Removed all event subscriptions for connection {ConnectionId}", connectionId);
+        }
+    }
+
+    /// <summary>
+    /// Gets the topics a connection is subscribed to.
+    /// </summary>
+    public IReadOnlyList<string> GetConnectionSubscriptions(string connectionId)
+    {
+        if (_connectionSubscriptions.TryGetValue(connectionId, out var subscriptions))
+            return subscriptions.GetTopics();
+
+        return [];
+    }
+
+    private async Task StreamEventsToConnectionAsync(string connectionId, string topic, CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var evt in _eventPublisher.SubscribeAsync(topic, ct).ConfigureAwait(false))
+            {
+                // Event would be sent to WebSocket here
+                // This is a hook point for WebSocket delivery
+                _logger.LogDebug("Streaming event {EventType} to connection {ConnectionId}", evt.Event, connectionId);
+
+                // TODO: Integrate with actual WebSocket send
+                // await _webSocket.SendAsync(...);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Event streaming cancelled for connection {ConnectionId} on topic '{Topic}'", connectionId, topic);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error streaming events to connection {ConnectionId}", connectionId);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        foreach (var (_, subscriptions) in _connectionSubscriptions)
+        {
+            subscriptions.Dispose();
+        }
+
+        _connectionSubscriptions.Clear();
+    }
+
+    /// <summary>
+    /// Tracks event subscriptions for a single connection.
+    /// </summary>
+    private sealed class ConnectionEventSubscriptions : IDisposable
+    {
+        private readonly HashSet<string> _topics = new(StringComparer.Ordinal);
+        private readonly Lock _lock = new();
+        private bool _disposed;
+
+        public string ConnectionId { get; }
+        public CancellationTokenSource Cts { get; } = new();
+
+        public ConnectionEventSubscriptions(string connectionId)
+        {
+            ConnectionId = connectionId;
+        }
+
+        public bool AddTopic(string topic)
+        {
+            lock (_lock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _topics.Add(topic);
+            }
+        }
+
+        public bool RemoveTopic(string topic)
+        {
+            lock (_lock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _topics.Remove(topic);
+            }
+        }
+
+        public IReadOnlyList<string> GetTopics()
+        {
+            lock (_lock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _topics.ToList();
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            Cts.Cancel();
+            Cts.Dispose();
+            _topics.Clear();
+        }
+    }
+}
+
+public sealed class ConnectionRegistry
+{
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _connections = new(StringComparer.Ordinal);
+
+    public bool TryConnect(string connectionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
+        return _connections.TryAdd(connectionId, DateTimeOffset.UtcNow);
+    }
+
+    public bool TryDisconnect(string connectionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
+        return _connections.TryRemove(connectionId, out _);
+    }
+
+    public int ActiveCount => _connections.Count;
+}
+
+public sealed record GatewayHealthSnapshot(DateTimeOffset ObservedAt, int ActiveConnections, bool IsHealthy);
+
+public sealed class GatewayHealthService(ConnectionRegistry connectionRegistry)
+{
+    private readonly ConnectionRegistry _connectionRegistry = connectionRegistry;
+
+    public GatewayHealthSnapshot Snapshot()
+    {
+        var active = _connectionRegistry.ActiveCount;
+        return new GatewayHealthSnapshot(DateTimeOffset.UtcNow, active, IsHealthy: true);
+    }
+}
+
+public sealed record KeepalivePolicy(TimeSpan PingInterval, TimeSpan Timeout)
+{
+    public static KeepalivePolicy Default => new(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(45));
+
+    public bool IsValid()
+    {
+        return PingInterval > TimeSpan.Zero
+            && Timeout > TimeSpan.Zero
+            && Timeout >= PingInterval;
+    }
+}
+
+/// <summary>
+/// Extends ConnectionRegistry with keepalive integration.
+/// </summary>
+public sealed class KeepaliveEnabledConnectionRegistry
+{
+    private readonly ConnectionRegistry _registry;
+    private readonly Keepalive.KeepaliveBackgroundService? _keepaliveService;
+
+    public KeepaliveEnabledConnectionRegistry(
+        ConnectionRegistry registry,
+        Keepalive.KeepaliveBackgroundService? keepaliveService = null)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+
+        _registry = registry;
+        _keepaliveService = keepaliveService;
+    }
+
+    /// <summary>
+    /// Attempts to connect a new connection and registers it with keepalive monitoring.
+    /// </summary>
+    public bool TryConnect(string connectionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
+
+        if (!_registry.TryConnect(connectionId))
+        {
+            return false;
+        }
+
+        _keepaliveService?.RegisterConnection(connectionId);
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to disconnect a connection and removes it from keepalive monitoring.
+    /// </summary>
+    public bool TryDisconnect(string connectionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
+
+        _keepaliveService?.UnregisterConnection(connectionId);
+        return _registry.TryDisconnect(connectionId);
+    }
+
+    /// <summary>
+    /// Gets the number of active connections.
+    /// </summary>
+    public int ActiveCount => _registry.ActiveCount;
+}
+
+public static class GatewayMethodRegistration
+{
+    /// <summary>
+    /// Scope constants for gateway methods.
+    /// </summary>
+    public static class Scopes
+    {
+        public const string Read = "operator:read";
+        public const string Write = "operator:write";
+        public const string Admin = "operator:admin";
+    }
+
+    public static void RegisterCoreMethods(GatewayDispatcher dispatcher, RunCoordinator runCoordinator)
+    {
+        ArgumentNullException.ThrowIfNull(dispatcher);
+        ArgumentNullException.ThrowIfNull(runCoordinator);
+
+        // Ping - no scope required
+        dispatcher.Register(
+            "ping",
+            FrozenSet<string>.Empty,
+            static (request, _, _) => Task.FromResult(new ResponseFrame(request.Id, Ok: true, Payload: new { pong = true })));
+
+        // Chat operations require write scope
+        dispatcher.Register(
+            "chat.send",
+            new[] { Scopes.Write }.ToFrozenSet(),
+            async (request, deviceContext, cancellationToken) =>
+            {
+                var input = TryReadString(request.Payload, "message") ?? string.Empty;
+                var result = await runCoordinator.StartAsync(
+                    input,
+                    deviceContext.DeviceId,
+                    request.IdempotencyKey,
+                    cancellationToken).ConfigureAwait(false);
+                return new ResponseFrame(request.Id, Ok: true, Payload: new { runId = result.RunId, status = result.Status });
+            });
+
+        dispatcher.Register(
+            "chat.abort",
+            new[] { Scopes.Write }.ToFrozenSet(),
+            async (request, deviceContext, cancellationToken) =>
+            {
+                var runId = TryReadString(request.Payload, "runId");
+                if (string.IsNullOrWhiteSpace(runId))
+                {
+                    return new ResponseFrame(
+                        request.Id,
+                        Ok: false,
+                        Error: new ErrorShape(ErrorCodes.InvalidRequest, "runId is required for chat.abort."));
+                }
+
+                var snapshot = await runCoordinator.AbortAsync(runId, deviceContext.DeviceId, cancellationToken).ConfigureAwait(false);
+                if (snapshot.Status == "not_found")
+                {
+                    return new ResponseFrame(
+                        request.Id,
+                        Ok: false,
+                        Error: new ErrorShape(ErrorCodes.InvalidRequest, $"Unknown runId: {runId}"));
+                }
+
+                return new ResponseFrame(request.Id, Ok: true, Payload: new { runId = snapshot.RunId, status = snapshot.Status });
+            });
+
+        dispatcher.Register(
+            "chat.status",
+            new[] { Scopes.Read }.ToFrozenSet(),
+            async (request, deviceContext, cancellationToken) =>
+            {
+                var runId = TryReadString(request.Payload, "runId");
+                if (string.IsNullOrWhiteSpace(runId))
+                {
+                    return new ResponseFrame(
+                        request.Id,
+                        Ok: false,
+                        Error: new ErrorShape(ErrorCodes.InvalidRequest, "runId is required for chat.status."));
+                }
+
+                var snapshot = await runCoordinator.GetSnapshotAsync(runId, deviceContext.DeviceId, cancellationToken);
+                if (snapshot.Status == "not_found")
+                {
+                    return new ResponseFrame(
+                        request.Id,
+                        Ok: false,
+                        Error: new ErrorShape(ErrorCodes.InvalidRequest, $"Unknown runId: {runId}"));
+                }
+
+                return new ResponseFrame(request.Id, Ok: true, Payload: new { runId = snapshot.RunId, status = snapshot.Status });
+            });
+    }
+
+    private static string? TryReadString(object? payload, string propertyName)
+    {
+        if (payload is null)
+        {
+            return null;
+        }
+
+        if (payload is JsonElement json && json.ValueKind == JsonValueKind.Object)
+        {
+            if (json.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.String)
+            {
+                return prop.GetString();
+            }
+
+            return null;
+        }
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var root = doc.RootElement;
+        if (root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString();
+        }
+
+        return null;
+    }
+}

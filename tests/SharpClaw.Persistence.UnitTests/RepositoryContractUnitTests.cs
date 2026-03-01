@@ -91,7 +91,7 @@ public class RepositoryContractUnitTests
         };
 
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => repository.GetAsync("id", cts.Token));
         await Assert.ThrowsAsync<OperationCanceledException>(() => repository.UpsertAsync("id", "v", cts.Token));

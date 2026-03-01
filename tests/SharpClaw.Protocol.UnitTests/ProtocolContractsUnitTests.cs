@@ -19,7 +19,9 @@ public class ProtocolContractsUnitTests
         Assert.Equal("AGENT_TIMEOUT", ErrorCodes.AgentTimeout);
         Assert.Equal("INVALID_REQUEST", ErrorCodes.InvalidRequest);
         Assert.Equal("UNAVAILABLE", ErrorCodes.Unavailable);
-        Assert.Equal(5, ErrorCodes.All.Count);
+        Assert.Equal("INTERNAL_ERROR", ErrorCodes.InternalError);
+        Assert.Equal("METHOD_NOT_FOUND", ErrorCodes.MethodNotFound);
+        Assert.Equal(7, ErrorCodes.All.Count);
     }
 
     [Fact]

@@ -5,6 +5,14 @@
     <ProjectReference Include="..\SharpClaw.Protocol.Contracts\SharpClaw.Protocol.Contracts.csproj" />
     <ProjectReference Include="..\SharpClaw.Execution.Abstractions\SharpClaw.Execution.Abstractions.csproj" />
     <ProjectReference Include="..\SharpClaw.Persistence.Abstractions\SharpClaw.Persistence.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Contracts\SharpClaw.Persistence.Contracts.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Core\SharpClaw.Persistence.Core.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.SandboxManager\SharpClaw.Execution.SandboxManager.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <PropertyGroup>

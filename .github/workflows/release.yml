@@ -1,0 +1,342 @@
+# SharpClaw Release Pipeline
+# Creates GitHub releases, publishes binaries, and pushes container images
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - '[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as prerelease'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NUGET_SIGNATURE_VERIFICATION: false
+  NUGET_XMLDOC_MODE: skip
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  actions: read
+  attestations: write
+  id-token: write
+
+jobs:
+  # ============================================================================
+  # VERSION EXTRACTION
+  # ============================================================================
+  version:
+    name: Extract Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      semver: ${{ steps.get_version.outputs.semver }}
+      is_prerelease: ${{ steps.get_version.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag or input
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/}
+            VERSION=${VERSION#v}
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "semver=$VERSION" >> $GITHUB_OUTPUT
+
+          # Check if prerelease (contains alpha, beta, rc, etc.)
+          if echo "$VERSION" | grep -qiE "(alpha|beta|rc|preview|pre|dev)"; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=${{ inputs.prerelease }}" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Building version: $VERSION"
+
+  # ============================================================================
+  # BUILD RELEASE BINARIES
+  # ============================================================================
+  build-binaries:
+    name: Build Binaries (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-latest
+            rid: linux-arm64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-x64
+          - os: macos-latest
+            rid: osx-arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore NuGet packages
+        run: dotnet restore --locked-mode
+
+      - name: Publish self-contained binary
+        run: |
+          dotnet publish src/SharpClaw.Host/SharpClaw.Host.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=true \
+            -p:TrimMode=partial \
+            -p:VersionPrefix=${{ needs.version.outputs.version }} \
+            -o ./publish/${{ matrix.rid }}
+
+      - name: Create archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd ./publish/${{ matrix.rid }}
+          tar -czf "../../sharpclaw-${{ needs.version.outputs.version }}-${{ matrix.rid }}.tar.gz" .
+          cd ../..
+          sha256sum "sharpclaw-${{ needs.version.outputs.version }}-${{ matrix.rid }}.tar.gz" > "sharpclaw-${{ needs.version.outputs.version }}-${{ matrix.rid }}.sha256"
+
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd ./publish/${{ matrix.rid }}
+          Compress-Archive -Path * -DestinationPath "../../sharpclaw-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip"
+          cd ../..
+          Get-FileHash -Algorithm SHA256 "sharpclaw-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip" | Select-Object -ExpandProperty Hash | Out-File -Encoding ASCII "sharpclaw-${{ needs.version.outputs.version }}-${{ matrix.rid }}.sha256"
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.rid }}
+          path: |
+            sharpclaw-*.tar.gz
+            sharpclaw-*.zip
+            sharpclaw-*.sha256
+          retention-days: 30
+
+  # ============================================================================
+  # PUBLISH CONTAINER IMAGE
+  # ============================================================================
+  publish-container:
+    name: Publish Container Image
+    runs-on: ubuntu-latest
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=v${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}},value=v${{ needs.version.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.version.outputs.is_prerelease == 'false' }}
+            type=raw,value=latest-preview,enable=${{ needs.version.outputs.is_prerelease == 'true' }}
+          flavor: |
+            latest=false
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          provenance: true
+          sbom: true
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build-and-push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-release-scan'
+
+  # ============================================================================
+  # PUBLISH NUGET PACKAGES
+  # ============================================================================
+  publish-nuget:
+    name: Publish NuGet Packages
+    runs-on: ubuntu-latest
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore NuGet packages
+        run: dotnet restore --locked-mode
+
+      - name: Build solution
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Pack NuGet packages
+        run: |
+          dotnet pack --no-build --configuration Release \
+            -p:VersionPrefix=${{ needs.version.outputs.version }} \
+            --output ./nuget-packages
+
+      - name: Upload NuGet packages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./nuget-packages/*.nupkg
+          retention-days: 30
+
+      - name: Publish to GitHub Packages
+        if: needs.version.outputs.is_prerelease == 'false'
+        run: |
+          dotnet nuget push ./nuget-packages/*.nupkg \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "${{ secrets.GITHUB_TOKEN }}" \
+            --skip-duplicate
+
+  # ============================================================================
+  # CREATE GITHUB RELEASE
+  # ============================================================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [version, build-binaries, publish-container, publish-nuget]
+    permissions:
+      contents: write
+      attestations: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Generate changelog from commits since last tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "## What's Changed" > release-notes.md
+            echo "" >> release-notes.md
+            git log --pretty=format:"- %s (%h)" --no-merges $PREVIOUS_TAG..HEAD >> release-notes.md
+            echo "" >> release-notes.md
+          fi
+
+          echo "" >> release-notes.md
+          echo "## Container Images" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "- \\`ghcr.io/${{ github.repository }}:${{ needs.version.outputs.version }}\\`" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "## Assets" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "| Platform | Architecture |" >> release-notes.md
+          echo "|----------|-------------|" >> release-notes.md
+          echo "| Linux | x64, arm64 |" >> release-notes.md
+          echo "| Windows | x64 |" >> release-notes.md
+          echo "| macOS | x64, arm64 |" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG:-HEAD^}...v${{ needs.version.outputs.version }}" >> release-notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SharpClaw ${{ needs.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ needs.version.outputs.is_prerelease == 'true' }}
+          files: |
+            artifacts/binaries-*/sharpclaw-*
+          fail_on_unmatched_files: false
+
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            artifacts/binaries-*/*
+            artifacts/nuget-packages/*

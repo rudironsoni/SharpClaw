@@ -1,14 +1,22 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\SharpClaw.Abstractions\SharpClaw.Abstractions.csproj" />
-    <ProjectReference Include="..\SharpClaw.Persistence.Abstractions\SharpClaw.Persistence.Abstractions.csproj" />
-  </ItemGroup>
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Abstractions\SharpClaw.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Abstractions\SharpClaw.Persistence.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Contracts\SharpClaw.Persistence.Contracts.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Core\SharpClaw.Persistence.Core.csproj" />
+    <ProjectReference Include="..\SharpClaw.Tenancy\SharpClaw.Tenancy.csproj" />
+  </ItemGroup>
 
 </Project>

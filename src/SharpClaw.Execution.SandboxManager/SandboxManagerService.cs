@@ -1,9 +1,12 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using SharpClaw.Execution.Abstractions;
 
 namespace SharpClaw.Execution.SandboxManager;
 
 public sealed record SandboxStartRequest(
+    string RunId,
+    string Image = "alpine:latest",
     string? Provider = null,
     IReadOnlyList<string>? Mounts = null,
     bool AllowFallback = true);
@@ -12,11 +15,94 @@ public sealed class SandboxManagerService
 {
     private readonly Dictionary<string, ISandboxProvider> _providers;
     private readonly ConcurrentDictionary<string, SandboxHandle> _active = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, KeyedLock> _locks = new(StringComparer.Ordinal);
     private readonly ExecutionProviderPolicy _policy;
+    private readonly ILogger<SandboxManagerService> _logger;
 
-    public SandboxManagerService(IEnumerable<ISandboxProvider> providers, ExecutionProviderPolicy? policy = null)
+    private sealed class KeyedLock
+    {
+        public readonly SemaphoreSlim Semaphore = new(1, 1);
+        public int RefCount = 1;
+    }
+
+    private async Task<IDisposable> AcquireLockAsync(string runId, CancellationToken cancellationToken)
+    {
+        KeyedLock keyedLock;
+        lock (_locks)
+        {
+            if (!_locks.TryGetValue(runId, out keyedLock!))
+            {
+                keyedLock = new KeyedLock();
+                _locks.Add(runId, keyedLock);
+            }
+            else
+            {
+                keyedLock.RefCount++;
+            }
+        }
+
+        try
+        {
+            await keyedLock.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return new LockReleaser(this, runId, keyedLock);
+        }
+        catch
+        {
+            lock (_locks)
+            {
+                keyedLock.RefCount--;
+                if (keyedLock.RefCount == 0)
+                {
+                    _locks.Remove(runId);
+                    keyedLock.Semaphore.Dispose();
+                }
+            }
+
+            throw;
+        }
+    }
+
+    private void ReleaseLock(string runId, KeyedLock keyedLock)
+    {
+        keyedLock.Semaphore.Release();
+
+        lock (_locks)
+        {
+            keyedLock.RefCount--;
+            if (keyedLock.RefCount == 0)
+            {
+                _locks.Remove(runId);
+                keyedLock.Semaphore.Dispose();
+            }
+        }
+    }
+
+    private readonly struct LockReleaser : IDisposable
+    {
+        private readonly SandboxManagerService _service;
+        private readonly string _runId;
+        private readonly KeyedLock _keyedLock;
+
+        public LockReleaser(SandboxManagerService service, string runId, KeyedLock keyedLock)
+        {
+            _service = service;
+            _runId = runId;
+            _keyedLock = keyedLock;
+        }
+
+        public void Dispose()
+        {
+            _service.ReleaseLock(_runId, _keyedLock);
+        }
+    }
+
+    public SandboxManagerService(
+        IEnumerable<ISandboxProvider> providers,
+        ILogger<SandboxManagerService> logger,
+        ExecutionProviderPolicy? policy = null)
     {
         _providers = providers.ToDictionary(static provider => provider.Name, StringComparer.OrdinalIgnoreCase);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _policy = policy ?? new ExecutionProviderPolicy();
 
         if (!_providers.ContainsKey(_policy.DefaultProvider))
@@ -25,20 +111,31 @@ public sealed class SandboxManagerService
         }
     }
 
-    public SandboxManagerService(IEnumerable<ISandboxProvider> providers, string defaultProvider)
-        : this(providers, new ExecutionProviderPolicy(DefaultProvider: defaultProvider))
+    public SandboxManagerService(
+        IEnumerable<ISandboxProvider> providers,
+        ILogger<SandboxManagerService> logger,
+        string defaultProvider)
+        : this(providers, logger, new ExecutionProviderPolicy(DefaultProvider: defaultProvider))
     {
     }
 
-    public Task<SandboxHandle> StartDefaultAsync(IReadOnlyList<string>? mounts = null, CancellationToken cancellationToken = default)
+    public Task<SandboxHandle> StartDefaultAsync(string runId, IReadOnlyList<string>? mounts = null, CancellationToken cancellationToken = default)
     {
-        return StartAsync(new SandboxStartRequest(Mounts: mounts), cancellationToken);
+        return StartSandboxAsync(new SandboxStartRequest(RunId: runId, Mounts: mounts), cancellationToken);
     }
 
-    public async Task<SandboxHandle> StartAsync(SandboxStartRequest request, CancellationToken cancellationToken = default)
+    public async Task<SandboxHandle> StartSandboxAsync(SandboxStartRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateMountPolicy(request.Mounts);
+
+        using var sync = await AcquireLockAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+
+        if (_active.TryGetValue(request.RunId, out var existingHandle))
+        {
+            _logger.LogInformation("Sandbox for RunId {RunId} is already active.", request.RunId);
+            return existingHandle;
+        }
 
         var candidates = _policy.ResolveCandidates(request.Provider, request.AllowFallback);
         List<Exception>? failures = null;
@@ -58,11 +155,13 @@ public sealed class SandboxManagerService
             try
             {
                 var handle = await provider.StartAsync(cancellationToken).ConfigureAwait(false);
-                _active[handle.SandboxId] = handle;
+                _active.TryAdd(request.RunId, handle);
+                _logger.LogInformation("Successfully started sandbox for RunId {RunId} using provider {Provider}.", request.RunId, candidate);
                 return handle;
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Provider {Provider} failed to start sandbox for RunId {RunId}.", candidate, request.RunId);
                 failures ??= [];
                 failures.Add(ex);
 
@@ -83,25 +182,29 @@ public sealed class SandboxManagerService
         throw new InvalidOperationException($"No available sandbox provider matched candidates: {string.Join(", ", candidates)}");
     }
 
-    public async Task StopAsync(string sandboxId, CancellationToken cancellationToken = default)
+    public async Task StopSandboxAsync(string runId, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sandboxId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        if (!_active.TryRemove(sandboxId, out var handle))
+        using var sync = await AcquireLockAsync(runId, cancellationToken).ConfigureAwait(false);
+
+        if (!_active.TryRemove(runId, out var handle))
         {
+            _logger.LogInformation("No active sandbox found for RunId {RunId}.", runId);
             return;
         }
 
         if (_providers.TryGetValue(handle.Provider, out var provider))
         {
+            _logger.LogInformation("Stopping sandbox for RunId {RunId} using provider {Provider}.", runId, handle.Provider);
             await provider.StopAsync(handle, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    public bool IsActive(string sandboxId)
+    public bool IsActive(string runId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sandboxId);
-        return _active.ContainsKey(sandboxId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        return _active.ContainsKey(runId);
     }
 
     private static void ValidateMountPolicy(IReadOnlyList<string>? mounts)

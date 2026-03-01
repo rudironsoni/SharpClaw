@@ -7,6 +7,7 @@
     <ProjectReference Include="..\SharpClaw.Identity\SharpClaw.Identity.csproj" />
     <ProjectReference Include="..\SharpClaw.Protocol.Contracts\SharpClaw.Protocol.Contracts.csproj" />
     <ProjectReference Include="..\SharpClaw.Runs\SharpClaw.Runs.csproj" />
+    <ProjectReference Include="..\SharpClaw.Tenancy\SharpClaw.Tenancy.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

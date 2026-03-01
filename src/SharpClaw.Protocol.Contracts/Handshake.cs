@@ -60,6 +60,6 @@ public sealed record HelloOk(
     HelloServerInfo Server,
     HelloFeatures Features,
     object? Snapshot,
-    string? CanvasHostUrl,
+    Uri? CanvasHostUrl,
     HelloAuth? Auth,
     HelloPolicy Policy);

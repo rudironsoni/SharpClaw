@@ -1,0 +1,44 @@
+# CodeQL Configuration for SharpClaw
+# https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning
+
+name: SharpClaw CodeQL Configuration
+
+# Disable default queries to use custom queries
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+
+# Paths to include/exclude from analysis
+paths:
+  - src/**
+  - tests/**
+
+paths-ignore:
+  - '**/bin/**'
+  - '**/obj/**'
+  - '**/*.Designer.cs'
+  - '**/Migrations/**'
+
+# Query filters to suppress false positives or irrelevant warnings
+query-filters:
+  - exclude:
+      id: cs/serialization-deserialization-of-untrusted-data
+      explanation: "False positive for JSON serialization with System.Text.Json source generators"
+
+  - exclude:
+      id: cs/call-to-gc-suppress-finalize
+      explanation: "Intentional in resource disposal patterns"
+
+# Additional packs to include
+packs:
+  # C# security queries
+  - codeql/csharp-queries:default
+
+# CodeQL options
+codeql:
+  # Enable extended analysis for C#
+  csharp:
+    # Enable data flow analysis
+    enable-data-flow: true
+    # Enable taint tracking
+    enable-taint-tracking: true

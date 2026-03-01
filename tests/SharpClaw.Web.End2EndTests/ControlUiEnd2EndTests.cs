@@ -1,18 +1,40 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
-using SharpClaw.Web;
+using Microsoft.Extensions.DependencyInjection;
+using SharpClaw.Persistence.Core;
+using SharpClaw.Web.IntegrationTests;
 
 namespace SharpClaw.Web.End2EndTests;
 
-public class ControlUiEnd2EndTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public class ControlUiEnd2EndTests(SharpClawWebApplicationFactory factory)
+    : IClassFixture<SharpClawWebApplicationFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory = factory;
+    private readonly SharpClawWebApplicationFactory _factory = factory;
+
+    private async Task SeedTestDeviceAsync(string deviceId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<SharpClawDbContext>();
+        
+        if (!dbContext.DeviceIdentities.Any(d => d.DeviceId == deviceId && d.TenantId == "default"))
+        {
+            dbContext.DeviceIdentities.Add(new SharpClaw.Persistence.Contracts.Entities.DeviceIdentityEntity
+            {
+                DeviceId = deviceId,
+                TenantId = "default",
+                IsPaired = true,
+                PublicKey = $"test-key-{deviceId}",
+                Scopes = "operator:write",
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+            await dbContext.SaveChangesAsync();
+        }
+    }
 
     [Fact]
     public async Task SendThenAbort_RunLifecycleWorksThroughControlUiEndpoints()
     {
+        await SeedTestDeviceAsync("device-e2e");
         var client = _factory.CreateClient();
 
         var send = new ControlUiSendRequest(
@@ -46,6 +68,7 @@ public class ControlUiEnd2EndTests(WebApplicationFactory<Program> factory)
     [Fact]
     public async Task AbortEndpoint_ReturnsBadRequestWhenRunIdMissing()
     {
+        await SeedTestDeviceAsync("device-e2e");
         var client = _factory.CreateClient();
 
         var abort = new ControlUiAbortRequest(

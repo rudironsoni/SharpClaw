@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using SharpClaw.Execution.Abstractions;
 using SharpClaw.Execution.SandboxManager;
 
@@ -9,20 +10,23 @@ public class SandboxLifecycleIntegrationTests
     public async Task StartAndStop_WorksAcrossMultipleRequests()
     {
         var provider = new LocalRecordingProvider();
-        var manager = new SandboxManagerService([provider], defaultProvider: "fake");
+        var manager = new SandboxManagerService([provider], Microsoft.Extensions.Logging.Abstractions.NullLogger<SharpClaw.Execution.SandboxManager.SandboxManagerService>.Instance, defaultProvider: "fake");
 
-        var first = await manager.StartAsync(new SandboxStartRequest("fake"));
-        var second = await manager.StartAsync(new SandboxStartRequest("fake"));
+        var firstRunId = Guid.NewGuid().ToString("N");
+        var secondRunId = Guid.NewGuid().ToString("N");
+        
+        var first = await manager.StartSandboxAsync(new SandboxStartRequest(firstRunId, Provider: "fake"));
+        var second = await manager.StartSandboxAsync(new SandboxStartRequest(secondRunId, Provider: "fake"));
 
-        Assert.True(manager.IsActive(first.SandboxId));
-        Assert.True(manager.IsActive(second.SandboxId));
+        Assert.True(manager.IsActive(firstRunId));
+        Assert.True(manager.IsActive(secondRunId));
 
-        await manager.StopAsync(first.SandboxId);
-        Assert.False(manager.IsActive(first.SandboxId));
-        Assert.True(manager.IsActive(second.SandboxId));
+        await manager.StopSandboxAsync(firstRunId);
+        Assert.False(manager.IsActive(firstRunId));
+        Assert.True(manager.IsActive(secondRunId));
 
-        await manager.StopAsync(second.SandboxId);
-        Assert.False(manager.IsActive(second.SandboxId));
+        await manager.StopSandboxAsync(secondRunId);
+        Assert.False(manager.IsActive(secondRunId));
 
         Assert.Equal(2, provider.Started);
         Assert.Equal(2, provider.Stopped);
@@ -57,12 +61,13 @@ public class SandboxLifecycleIntegrationTests
         var failingDefault = new FailingProvider("dind");
         var fallback = new RecordingProvider("podman");
         var policy = new ExecutionProviderPolicy(DefaultProvider: "dind", FallbackProvider: "podman");
-        var manager = new SandboxManagerService([failingDefault, fallback], policy);
+        var manager = new SandboxManagerService([failingDefault, fallback], Microsoft.Extensions.Logging.Abstractions.NullLogger<SharpClaw.Execution.SandboxManager.SandboxManagerService>.Instance, policy);
 
-        var handle = await manager.StartDefaultAsync();
+        var runId = Guid.NewGuid().ToString("N");
+        var handle = await manager.StartDefaultAsync(runId);
 
         Assert.Equal("podman", handle.Provider);
-        Assert.True(manager.IsActive(handle.SandboxId));
+        Assert.True(manager.IsActive(runId));
         Assert.Equal(1, fallback.Started);
     }
 

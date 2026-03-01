@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sharpclaw-host
+  namespace: default
+  labels:
+    app: sharpclaw-host
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sharpclaw-host
+  template:
+    metadata:
+      labels:
+        app: sharpclaw-host
+    spec:
+      containers:
+        - name: sharpclaw-host
+          image: sharpclaw-host:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: sharpclaw-config
+            - secretRef:
+                name: sharpclaw-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

@@ -64,7 +64,7 @@ public static class OpenResponsesEndpoints
         }
 
         var inputText = JsonSerializer.Serialize(request.Input);
-        var start = await runs.StartAsync(inputText, idempotencyKey: null, cancellationToken);
+        var start = await runs.StartAsync(inputText, "default", idempotencyKey: null, cancellationToken);
 
         if (request.Stream == true)
         {

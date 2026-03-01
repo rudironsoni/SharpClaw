@@ -2,6 +2,25 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SharpClaw.Extensions.DependencyInjection\SharpClaw.Extensions.DependencyInjection.csproj" />
+    <ProjectReference Include="..\SharpClaw.Abstractions\SharpClaw.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Cloud.Azure\SharpClaw.Cloud.Azure.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Core\SharpClaw.Persistence.Core.csproj" />
+    <ProjectReference Include="..\SharpClaw.Persistence.Contracts\SharpClaw.Persistence.Contracts.csproj" />
+    <ProjectReference Include="..\SharpClaw.RateLimiting\SharpClaw.RateLimiting.csproj" />
+    <ProjectReference Include="..\SharpClaw.Tenancy\SharpClaw.Tenancy.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Abstractions\SharpClaw.Execution.Abstractions.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Docker\SharpClaw.Execution.Docker.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Podman\SharpClaw.Execution.Podman.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Daytona\SharpClaw.Execution.Daytona.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.Kubernetes\SharpClaw.Execution.Kubernetes.csproj" />
+    <ProjectReference Include="..\SharpClaw.Execution.SandboxManager\SharpClaw.Execution.SandboxManager.csproj" />
+    <ProjectReference Include="..\SharpClaw.Gateway\SharpClaw.Gateway.csproj" />
+    <ProjectReference Include="..\SharpClaw.Identity\SharpClaw.Identity.csproj" />
+    <ProjectReference Include="..\SharpClaw.Runs\SharpClaw.Runs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
   </ItemGroup>
 
   <PropertyGroup>

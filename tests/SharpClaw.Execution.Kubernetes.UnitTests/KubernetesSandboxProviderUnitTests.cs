@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using SharpClaw.Execution.Kubernetes;
 
 namespace SharpClaw.Execution.Kubernetes.UnitTests;
@@ -7,7 +8,7 @@ public class KubernetesSandboxProviderUnitTests
     [Fact]
     public void Name_IsKubernetes()
     {
-        var provider = new KubernetesSandboxProvider();
+        var provider = new KubernetesSandboxProvider(NullLogger<KubernetesSandboxProvider>.Instance);
 
         Assert.Equal("kubernetes", provider.Name);
     }
@@ -15,7 +16,7 @@ public class KubernetesSandboxProviderUnitTests
     [Fact]
     public async Task StartAsync_ReturnsK8sPrefixedHandle()
     {
-        var provider = new KubernetesSandboxProvider();
+        var provider = new KubernetesSandboxProvider(NullLogger<KubernetesSandboxProvider>.Instance);
 
         var handle = await provider.StartAsync();
 
@@ -26,7 +27,7 @@ public class KubernetesSandboxProviderUnitTests
     [Fact]
     public async Task StartAsync_RespectsCancellation()
     {
-        var provider = new KubernetesSandboxProvider();
+        var provider = new KubernetesSandboxProvider(NullLogger<KubernetesSandboxProvider>.Instance);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
@@ -37,8 +38,8 @@ public class KubernetesSandboxProviderUnitTests
     public async Task StartAsync_UsesKataRuntimeClass_ForSensitiveWorkloads_WhenEnabled()
     {
         var provider = new KubernetesSandboxProvider(
-            policy: new KubernetesRuntimeClassPolicy(EnableKataForSensitive: true),
-            sensitivityResolver: () => WorkloadSensitivity.Sensitive);
+            NullLogger<KubernetesSandboxProvider>.Instance,
+            policy: new KubernetesRuntimeClassPolicy(EnableKataForSensitive: true));
 
         var handle = await provider.StartAsync();
 
@@ -49,11 +50,11 @@ public class KubernetesSandboxProviderUnitTests
     public async Task StartAsync_UsesDefaultRuntimeClass_ForSensitiveWorkloads_WhenKataDisabled()
     {
         var provider = new KubernetesSandboxProvider(
+            NullLogger<KubernetesSandboxProvider>.Instance,
             policy: new KubernetesRuntimeClassPolicy(
                 EnableKataForSensitive: false,
                 DefaultRuntimeClass: "runc",
-                KataRuntimeClass: "kata"),
-            sensitivityResolver: () => WorkloadSensitivity.Sensitive);
+                KataRuntimeClass: "kata"));
 
         var handle = await provider.StartAsync();
 

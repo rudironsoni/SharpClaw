@@ -7,6 +7,7 @@
     <ProjectReference Include="..\SharpClaw.Gateway\SharpClaw.Gateway.csproj" />
     <ProjectReference Include="..\SharpClaw.OpenResponses.HttpApi\SharpClaw.OpenResponses.HttpApi.csproj" />
     <ProjectReference Include="..\SharpClaw.Web\SharpClaw.Web.csproj" />
+    <ProjectReference Include="..\SharpClaw.Tenancy\SharpClaw.Tenancy.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

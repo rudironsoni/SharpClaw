@@ -2,10 +2,11 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using SharpClaw.Abstractions.Identity;
 using SharpClaw.Gateway;
-using SharpClaw.Identity;
 using SharpClaw.Protocol.Contracts;
 using SharpClaw.Runs;
+using SharpClaw.Tenancy;
 
 namespace SharpClaw.Web;
 
@@ -80,7 +81,7 @@ public static class ControlUiEndpoints
 
     private static async Task<IResult> HandleSendAsync(
         ControlUiSendRequest request,
-        [FromServices] IdentityService identity,
+        [FromServices] IIdentityService identity,
         [FromServices] GatewayDispatcher dispatcher,
         CancellationToken cancellationToken)
     {
@@ -90,13 +91,18 @@ public static class ControlUiEndpoints
             return Results.BadRequest(validation);
         }
 
+        var tenantId = AsyncLocalTenantContext.Current.TenantId;
         var scopes = request.Scopes?.Count > 0
-            ? request.Scopes
-            : DefaultWriteScopes;
+            ? request.Scopes.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(DefaultWriteScopes, StringComparer.OrdinalIgnoreCase);
 
-        var auth = new AuthContext(request.DeviceId, scopes.ToHashSet(StringComparer.OrdinalIgnoreCase), IsPaired: true);
-        var authResult = identity.Authorize(auth, "chat.send");
-        if (!authResult.Succeeded)
+        var authResult = await identity.AuthorizeAsync(
+            request.DeviceId, 
+            tenantId, 
+            scopes, 
+            cancellationToken).ConfigureAwait(false);
+            
+        if (!authResult.IsSuccess)
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -107,7 +113,11 @@ public static class ControlUiEndpoints
             Payload: new { message = request.Message },
             IdempotencyKey: request.IdempotencyKey);
 
-        var response = await dispatcher.DispatchAsync(frame, cancellationToken).ConfigureAwait(false);
+        var deviceContext = new SharpClaw.Gateway.DeviceContext(
+            request.DeviceId, 
+            authResult.Device!.Scopes, 
+            true);
+        var response = await dispatcher.DispatchAsync(frame, deviceContext, cancellationToken).ConfigureAwait(false);
         if (!response.Ok)
         {
             return Results.BadRequest(response.Error);
@@ -124,7 +134,7 @@ public static class ControlUiEndpoints
 
     private static async Task<IResult> HandleAbortAsync(
         ControlUiAbortRequest request,
-        [FromServices] IdentityService identity,
+        [FromServices] IIdentityService identity,
         [FromServices] GatewayDispatcher dispatcher,
         CancellationToken cancellationToken)
     {
@@ -134,13 +144,18 @@ public static class ControlUiEndpoints
             return Results.BadRequest(validation);
         }
 
+        var tenantId = AsyncLocalTenantContext.Current.TenantId;
         var scopes = request.Scopes?.Count > 0
-            ? request.Scopes
-            : DefaultWriteScopes;
+            ? request.Scopes.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(DefaultWriteScopes, StringComparer.OrdinalIgnoreCase);
 
-        var auth = new AuthContext(request.DeviceId, scopes.ToHashSet(StringComparer.OrdinalIgnoreCase), IsPaired: true);
-        var authResult = identity.Authorize(auth, "chat.abort");
-        if (!authResult.Succeeded)
+        var authResult = await identity.AuthorizeAsync(
+            request.DeviceId, 
+            tenantId, 
+            scopes, 
+            cancellationToken).ConfigureAwait(false);
+            
+        if (!authResult.IsSuccess)
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -150,7 +165,11 @@ public static class ControlUiEndpoints
             Method: "chat.abort",
             Payload: new { runId = request.RunId });
 
-        var response = await dispatcher.DispatchAsync(frame, cancellationToken).ConfigureAwait(false);
+        var deviceContext = new SharpClaw.Gateway.DeviceContext(
+            request.DeviceId, 
+            authResult.Device!.Scopes, 
+            true);
+        var response = await dispatcher.DispatchAsync(frame, deviceContext, cancellationToken).ConfigureAwait(false);
         if (!response.Ok)
         {
             return Results.BadRequest(response.Error);

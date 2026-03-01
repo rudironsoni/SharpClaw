@@ -1,0 +1,35 @@
+--- src/SharpClaw.Gateway/GatewayCore.cs
++++ src/SharpClaw.Gateway/GatewayCore.cs
+@@ -432,6 +432,9 @@
+                     deviceContext.DeviceId,
+                     request.IdempotencyKey,
+                     cancellationToken).ConfigureAwait(false);
++
++                _ = Task.Run(() => ForwardRunEventsAsync(dispatcher, runCoordinator, result.RunId), CancellationToken.None);
++
+                 return new ResponseFrame(request.Id, Ok: true, Payload: new { runId = result.RunId, status = result.Status });
+             });
+ 
+@@ -493,6 +496,22 @@
+             });
+     }
+ 
++    private static async Task ForwardRunEventsAsync(GatewayDispatcher dispatcher, RunCoordinator runCoordinator, string runId)
++    {
++        try
++        {
++            await foreach (var runEvent in runCoordinator.ReadEventsAsync(runId).ConfigureAwait(false))
++            {
++                var eventFrame = new EventFrame($"runs.{runId}", runEvent.Event, runEvent.Data);
++                await dispatcher.PublishEventAsync($"runs.{runId}", eventFrame).ConfigureAwait(false);
++            }
++        }
++        catch
++        {
++            // Background forwarding stopped
++        }
++    }
++
+     private static string? TryReadString(object? payload, string propertyName)
+     {
+         if (payload is null)

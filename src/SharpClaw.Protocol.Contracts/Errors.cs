@@ -7,6 +7,9 @@ public static class ErrorCodes
     public const string AgentTimeout = "AGENT_TIMEOUT";
     public const string InvalidRequest = "INVALID_REQUEST";
     public const string Unavailable = "UNAVAILABLE";
+    public const string InternalError = "INTERNAL_ERROR";
+
+    public const string MethodNotFound = "METHOD_NOT_FOUND";
 
     public static readonly IReadOnlyList<string> All =
     [
@@ -14,7 +17,9 @@ public static class ErrorCodes
         NotPaired,
         AgentTimeout,
         InvalidRequest,
-        Unavailable
+        Unavailable,
+        InternalError,
+        MethodNotFound
     ];
 }
 

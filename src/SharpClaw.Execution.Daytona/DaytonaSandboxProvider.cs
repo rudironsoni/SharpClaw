@@ -1,20 +1,213 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using SharpClaw.Execution.Abstractions;
 
 namespace SharpClaw.Execution.Daytona;
 
-public sealed class DaytonaSandboxProvider : ISandboxProvider
+/// <summary>
+/// Daytona-based sandbox provider for development environments.
+/// </summary>
+public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
 {
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<DaytonaSandboxProvider> _logger;
+    private readonly string _apiKey;
+    private readonly string _serverUrl;
+
     public string Name => "daytona";
 
-    public Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
+    public DaytonaSandboxProvider(
+        ILogger<DaytonaSandboxProvider> logger,
+        string? serverUrl = null,
+        string? apiKey = null)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new SandboxHandle(Name, $"daytona-{Guid.NewGuid():N}"));
+        _logger = logger;
+        _serverUrl = serverUrl ?? "https://api.daytona.io";
+        _apiKey = apiKey ?? Environment.GetEnvironmentVariable("DAYTONA_API_KEY") 
+            ?? throw new InvalidOperationException("Daytona API key not provided");
+
+        _httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(_serverUrl),
+            Timeout = TimeSpan.FromMinutes(5)
+        };
+
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        _logger.LogInformation("Daytona sandbox provider initialized with server: {ServerUrl}", _serverUrl);
     }
 
-    public Task StopAsync(SandboxHandle handle, CancellationToken cancellationToken = default)
+    public async Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.CompletedTask;
+        var workspaceId = $"sharpclaw-{Guid.NewGuid():N}";
+        
+        _logger.LogInformation("Creating Daytona workspace: {WorkspaceId}", workspaceId);
+
+        var createRequest = new CreateWorkspaceRequest
+        {
+            Id = workspaceId,
+            Name = workspaceId,
+            Image = "alpine:latest",
+            Env = new Dictionary<string, string>
+            {
+                { "SHARPCLAW_WORKSPACE_ID", workspaceId },
+                { "SHARPCLAW_PROVIDER", Name }
+            },
+            Labels = new Dictionary<string, string>
+            {
+                { "sharpclaw.provider", Name },
+                { "sharpclaw.managed", "true" },
+                { "sharpclaw.created", DateTimeOffset.UtcNow.ToString("O") }
+            }
+        };
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "api/workspaces",
+                createRequest,
+                cancellationToken);
+
+            response.EnsureSuccessStatusCode();
+            
+            var result = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(cancellationToken);
+            
+            if (result?.Id == null)
+            {
+                throw new InvalidOperationException("Failed to get workspace ID from Daytona response");
+            }
+
+            _logger.LogInformation(
+                "Workspace {WorkspaceId} created with Daytona ID {DaytonaId}",
+                workspaceId, result.Id);
+
+            await WaitForWorkspaceReadyAsync(result.Id, cancellationToken);
+
+            return new SandboxHandle(Name, result.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create Daytona workspace {WorkspaceId}", workspaceId);
+            throw;
+        }
+    }
+
+    public async Task StopAsync(SandboxHandle handle, CancellationToken cancellationToken = default)
+    {
+        if (handle.Provider != Name)
+        {
+            throw new InvalidOperationException($"Provider mismatch: expected {Name}, got {handle.Provider}");
+        }
+
+        var workspaceId = handle.SandboxId;
+        
+        _logger.LogInformation("Stopping Daytona workspace: {WorkspaceId}", workspaceId);
+
+        try
+        {
+            var stopResponse = await _httpClient.PostAsync(
+                $"api/workspaces/{workspaceId}/stop",
+                null,
+                cancellationToken);
+
+            if (!stopResponse.IsSuccessStatusCode && stopResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+            {
+                stopResponse.EnsureSuccessStatusCode();
+            }
+
+            _logger.LogInformation("Workspace {WorkspaceId} stopped", workspaceId);
+        }
+        catch (Exception ex) when (ex.Message.Contains("404"))
+        {
+            _logger.LogWarning("Workspace {WorkspaceId} not found during stop", workspaceId);
+        }
+
+        try
+        {
+            var removeResponse = await _httpClient.DeleteAsync(
+                $"api/workspaces/{workspaceId}",
+                cancellationToken);
+
+            if (!removeResponse.IsSuccessStatusCode && removeResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+            {
+                removeResponse.EnsureSuccessStatusCode();
+            }
+
+            _logger.LogInformation("Workspace {WorkspaceId} removed", workspaceId);
+        }
+        catch (Exception ex) when (ex.Message.Contains("404"))
+        {
+            _logger.LogWarning("Workspace {WorkspaceId} not found during removal", workspaceId);
+        }
+    }
+
+    private async Task WaitForWorkspaceReadyAsync(string workspaceId, CancellationToken cancellationToken)
+    {
+        var timeout = TimeSpan.FromMinutes(5);
+        var startTime = DateTime.UtcNow;
+
+        while (DateTime.UtcNow - startTime < timeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var response = await _httpClient.GetAsync(
+                $"api/workspaces/{workspaceId}",
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var workspace = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(cancellationToken);
+                
+                if (workspace?.State == "running")
+                {
+                    _logger.LogInformation("Workspace {WorkspaceId} is now running", workspaceId);
+                    return;
+                }
+
+                if (workspace?.State == "error" || workspace?.State == "stopped")
+                {
+                    throw new InvalidOperationException($"Workspace {workspaceId} entered error state: {workspace.State}");
+                }
+            }
+
+            await Task.Delay(1000, cancellationToken);
+        }
+
+        throw new TimeoutException($"Timeout waiting for workspace {workspaceId} to start");
+    }
+
+    public void Dispose()
+    {
+        _httpClient?.Dispose();
+    }
+
+    private class CreateWorkspaceRequest
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = null!;
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = null!;
+
+        [JsonPropertyName("image")]
+        public string Image { get; set; } = "alpine:latest";
+
+        [JsonPropertyName("env")]
+        public Dictionary<string, string> Env { get; set; } = new();
+
+        [JsonPropertyName("labels")]
+        public Dictionary<string, string> Labels { get; set; } = new();
+    }
+
+    private class WorkspaceResponse
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = null!;
+
+        [JsonPropertyName("state")]
+        public string State { get; set; } = null!;
     }
 }

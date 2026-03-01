@@ -18,7 +18,7 @@ public class RunExecutionServiceUnitTests
         var adapter = new StubAdapter();
         var service = new RunExecutionService(pipeline, adapter);
 
-        var result = await service.ExecuteAsync(new RunRequest("run-100", "hello"));
+        var result = await service.ExecutePipelineAsync(new RunRequest("run-100", "hello"));
 
         Assert.Equal("run-100", result.RunId);
         Assert.True(result.Result.Succeeded);
@@ -32,7 +32,33 @@ public class RunExecutionServiceUnitTests
         var adapter = new StubAdapter(shouldFail: true);
         var service = new RunExecutionService(pipeline, adapter);
 
-        var result = await service.ExecuteAsync(new RunRequest("run-200", "hello"));
+        var result = await service.ExecutePipelineAsync(new RunRequest("run-200", "hello"));
+
+        Assert.False(result.Result.Succeeded);
+        Assert.Equal("adapter-failure", result.Result.Error);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_IRunExecutionService_ReturnsSuccessResult()
+    {
+        var pipeline = new AgentRuntimePipeline();
+        var adapter = new StubAdapter();
+        IRunExecutionService service = new RunExecutionService(pipeline, adapter);
+
+        var result = await service.ExecuteAsync(new RunRequest("run-300", "hello"));
+
+        Assert.True(result.Result.Succeeded);
+        Assert.Null(result.Result.Error);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_IRunExecutionService_ReturnsFailureResult()
+    {
+        var pipeline = new AgentRuntimePipeline();
+        var adapter = new StubAdapter(shouldFail: true);
+        IRunExecutionService service = new RunExecutionService(pipeline, adapter);
+
+        var result = await service.ExecuteAsync(new RunRequest("run-400", "hello"));
 
         Assert.False(result.Result.Succeeded);
         Assert.Equal("adapter-failure", result.Result.Error);
