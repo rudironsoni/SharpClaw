@@ -89,12 +89,12 @@ public sealed class KubernetesSandboxProvider : ISandboxProvider, IDisposable
                 {
                     { "sharpclaw.provider", Name },
                     { "sharpclaw.managed", "true" },
-                    { "sharpclaw.created", DateTimeOffset.UtcNow.ToString("O") }
+                    { "sharpclaw.created", DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture) }
                 }
             },
             Spec = new V1PodSpec
             {
-                RuntimeClassName = runtimeClass,
+                RuntimeClassName = string.IsNullOrWhiteSpace(runtimeClass) ? null : runtimeClass,
                 RestartPolicy = "Never",
                 SecurityContext = new V1PodSecurityContext
                 {

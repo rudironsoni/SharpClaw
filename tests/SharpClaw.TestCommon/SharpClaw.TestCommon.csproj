@@ -14,9 +14,9 @@
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="xunit.assert" />
     <PackageReference Include="Testcontainers" />
+    <PackageReference Include="Testcontainers.K3s" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Redis" />
-    <PackageReference Include="WireMock.Net" />
     <PackageReference Include="Bogus" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="xunit" />

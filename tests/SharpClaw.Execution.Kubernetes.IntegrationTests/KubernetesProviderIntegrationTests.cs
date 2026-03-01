@@ -7,15 +7,21 @@ namespace SharpClaw.Execution.Kubernetes.IntegrationTests;
 
 public class KubernetesProviderIntegrationTests : IAsyncLifetime
 {
-    private readonly KubernetesApiContainerFixture _fixture = new();
+    private readonly K3sClusterFixture _fixture = new();
     private SandboxManagerService? _manager;
 
     public async Task InitializeAsync()
     {
-        await _fixture.StartAsync();
+        await _fixture.InitializeAsync();
+
+        var policy = new KubernetesRuntimeClassPolicy(
+            EnableKataForSensitive: false,
+            DefaultRuntimeClass: "",
+            KataRuntimeClass: "");
 
         var provider = new KubernetesSandboxProvider(
             NullLogger<KubernetesSandboxProvider>.Instance,
+            policy,
             kubeConfigPath: _fixture.KubeConfigPath,
             @namespace: "default");
 
@@ -65,7 +71,6 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
 
         Assert.Equal("kubernetes", handle.Provider);
         Assert.True(_manager.IsActive(runId));
-        Assert.True(await _fixture.HasRequestAsync("POST", "/api/v1/namespaces/default/pods"));
     }
 
     [Fact]
@@ -80,6 +85,5 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
         await _manager.StopSandboxAsync(runId);
 
         Assert.False(_manager.IsActive(runId));
-        Assert.True(await _fixture.HasRequestAsync("DELETE", $"/api/v1/namespaces/default/pods/{handle.SandboxId}"));
     }
 }
