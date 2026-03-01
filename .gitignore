@@ -195,6 +195,15 @@ FakesAssemblies/
 # JetBrains Rider
 *.sln.iml
 
+# JetBrains IDEs
+.idea/
+*.ipr
+*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
+
 # SharpClaw - Local agent/tool state
 .agent/
 .agents/
