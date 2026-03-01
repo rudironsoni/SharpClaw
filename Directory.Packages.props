@@ -64,6 +64,7 @@
     <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.3" />
     <!-- ASP.NET Core Abstractions -->
     <PackageVersion Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
+    <PackageVersion Include="System.Net.WebSockets.Client" Version="10.0.0" />
     <PackageVersion Include="System.Threading.RateLimiting" Version="9.0.2" />
     <!-- Analyzers -->
     <PackageVersion Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.0-preview.25076.4" />
