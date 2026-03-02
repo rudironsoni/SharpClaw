@@ -43,9 +43,12 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private const int DexPort = 5556;
     private const string TestcontainersHost = "host.testcontainers.internal";
     private const string DefaultApiHealthPath = "/api/health";
-    private static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan DefaultReadyPollInterval = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan DefaultReadyRequestTimeout = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan DefaultReadyPollInterval = TimeSpan.FromSeconds(3);
+        private static readonly TimeSpan DefaultReadyRequestTimeout = TimeSpan.FromSeconds(10);
+        // Proxy-specific readiness knobs (can be overridden with env vars)
+        private static readonly TimeSpan DefaultProxyReadyTimeout = TimeSpan.FromMinutes(6);
+        private static readonly TimeSpan DefaultProxyReadyPollInterval = TimeSpan.FromSeconds(2);
     private const string DefaultApiImage = "daytonaio/daytona-api:v0.148.0";
     private const string DefaultProxyImage = "daytonaio/daytona-proxy:v0.148.0";
     private const string DefaultRunnerImage = "daytonaio/daytona-runner:v0.148.0";
@@ -84,6 +87,8 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private readonly TimeSpan _readyTimeout;
     private readonly TimeSpan _readyPollInterval;
     private readonly TimeSpan _readyRequestTimeout;
+    private readonly TimeSpan _proxyReadyTimeout;
+    private readonly TimeSpan _proxyReadyPollInterval;
     private bool _networkCreated;
     private bool _started;
     private bool _disposed;
@@ -112,6 +117,8 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
         _readyTimeout = GetDurationFromEnvironment("SHARPCLAW_DAYTONA_READY_TIMEOUT", DefaultReadyTimeout);
         _readyPollInterval = GetDurationFromEnvironment("SHARPCLAW_DAYTONA_READY_POLL_INTERVAL", DefaultReadyPollInterval);
         _readyRequestTimeout = GetDurationFromEnvironment("SHARPCLAW_DAYTONA_READY_REQUEST_TIMEOUT", DefaultReadyRequestTimeout);
+        _proxyReadyTimeout = GetDurationFromEnvironment("SHARPCLAW_DAYTONA_PROXY_READY_TIMEOUT", DefaultProxyReadyTimeout);
+        _proxyReadyPollInterval = GetDurationFromEnvironment("SHARPCLAW_DAYTONA_PROXY_READY_POLL_INTERVAL", DefaultProxyReadyPollInterval);
 
         File.WriteAllText(_dexConfigPath, @$"issuer: http://dex:{DexPort}/dex
 storage:
@@ -389,9 +396,15 @@ staticPasswords:
 
             // Build and start proxy after API is fully ready
             // Proxy needs the internal API URL for communication
+            // Also ensure the /config endpoint is available before starting proxy
+            await EnsureApiConfigReadyAsync();
             var proxy = BuildProxyContainer(GetApiInternalBaseUrl());
             _daytonaProxy = proxy;
             await _daytonaProxy.StartAsync();
+
+            // After container start, actively probe the proxy through its mapped (external) port
+            // to ensure it can reach the API and is functional before proceeding.
+            await EnsureProxyReadyAsync();
 
             _started = true;
         }
@@ -525,17 +538,78 @@ staticPasswords:
         return new ContainerBuilder(proxyImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-proxy")
+            .WithPortBinding(DefaultProxyPort, true)
             .WithEnvironment("ENCRYPTION_KEY", _encryptionKey)
             .WithEnvironment("ENCRYPTION_SALT", _encryptionSalt)
             .WithEnvironment("PROXY_PORT", DefaultProxyPort.ToString())
             .WithEnvironment("PROXY_URL", $"http://daytona-proxy:{DefaultProxyPort}")
-            .WithEnvironment("PROXY_API_URL", apiInternalUrl)
+            // PROXY_API_URL is expected to include the /api suffix in many Daytona proxy builds
+            .WithEnvironment("PROXY_API_URL", GetProxyApiUrl(apiInternalUrl))
             .WithEnvironment("PROXY_API_KEY", ApiKey)
             .WithEnvironment("PROXY_PROTOCOL", _proxyProtocol)
             .WithEnvironment("DAYTONA_API_URL", apiInternalUrl)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("proxy"))
+                // Keep a lightweight command check but do not rely on it solely for readiness.
+                .UntilCommandIsCompleted($"/bin/sh -c 'sleep 1; nc -z localhost {DefaultProxyPort} || exit 1'"))
             .Build();
+    }
+
+    private string GetProxyExternalBaseUrl()
+    {
+        var host = TestcontainersHost;
+        var mappedPort = _daytonaProxy.GetMappedPublicPort(DefaultProxyPort);
+        return $"http://{host}:{mappedPort}";
+    }
+
+    private async Task EnsureProxyReadyAsync()
+    {
+        // Probe the proxy by requesting the API health endpoint through the proxy.
+        // Many Daytona proxy configurations will forward /api/* to the internal API service.
+        var proxyBase = GetProxyExternalBaseUrl();
+        var probePath = "/api/health"; // probe the proxied API health
+        using var client = new HttpClient
+        {
+            Timeout = _readyRequestTimeout
+        };
+
+        var deadline = DateTimeOffset.UtcNow + _proxyReadyTimeout;
+        Exception? lastError = null;
+        var delay = _proxyReadyPollInterval;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                var uri = new Uri(new Uri(proxyBase), probePath);
+                using var response = await client.GetAsync(uri);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            // Exponential backoff with cap to avoid busy-waiting
+            await Task.Delay(delay);
+            delay = TimeSpan.FromSeconds(Math.Min(30, delay.TotalSeconds * 2));
+        }
+
+        // If we reach here, the proxy never became ready. Capture container logs for diagnostics.
+        try
+        {
+            Console.Error.WriteLine("Daytona proxy failed to become ready. Capturing container logs for diagnostics:");
+            var logs = await _daytonaProxy.GetLogsAsync();
+            Console.Error.WriteLine(logs);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to retrieve Daytona proxy logs: {ex.Message}");
+        }
+
+        throw new TimeoutException($"Daytona proxy failed to become ready at {proxyBase}{probePath} within {_proxyReadyTimeout}.", lastError);
     }
 
     private IContainer BuildRunnerContainer(string apiExternalUrl)
@@ -724,6 +798,40 @@ staticPasswords:
 
         throw new TimeoutException(
             $"Daytona API failed to become ready at {healthUri} within {_readyTimeout}.",
+            lastError);
+    }
+
+    private async Task EnsureApiConfigReadyAsync()
+    {
+        var configUri = new Uri(new Uri(ServerUrl), "/config");
+        using var client = new HttpClient
+        {
+            Timeout = _readyRequestTimeout
+        };
+
+        var deadline = DateTimeOffset.UtcNow + _readyTimeout;
+        Exception? lastError = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                using var response = await client.GetAsync(configUri);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(_readyPollInterval);
+        }
+
+        throw new TimeoutException(
+            $"Daytona API /config endpoint failed to become ready at {configUri} within {_readyTimeout}.",
             lastError);
     }
 
