@@ -67,7 +67,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
         try
         {
             var response = await _httpClient.PostAsJsonAsync(
-                "api/workspaces",
+                "api/workspace",
                 createRequest,
                 cancellationToken);
 
@@ -109,7 +109,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
         try
         {
             var stopResponse = await _httpClient.PostAsync(
-                $"api/workspaces/{workspaceId}/stop",
+                $"api/workspace/{workspaceId}/stop",
                 null,
                 cancellationToken);
 
@@ -128,7 +128,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
         try
         {
             var removeResponse = await _httpClient.DeleteAsync(
-                $"api/workspaces/{workspaceId}",
+                $"api/workspace/{workspaceId}",
                 cancellationToken);
 
             if (!removeResponse.IsSuccessStatusCode && removeResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
@@ -154,7 +154,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             var response = await _httpClient.GetAsync(
-                $"api/workspaces/{workspaceId}",
+                $"api/workspace/{workspaceId}",
                 cancellationToken);
 
             if (response.IsSuccessStatusCode)

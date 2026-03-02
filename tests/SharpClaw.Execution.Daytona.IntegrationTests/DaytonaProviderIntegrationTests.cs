@@ -6,14 +6,15 @@ using Xunit;
 
 namespace SharpClaw.Execution.Daytona.IntegrationTests;
 
-/// <summary>
-/// Daytona OSS integration tests are intentionally skipped until stability work is scheduled.
-/// </summary>
-public class DaytonaProviderIntegrationTests : IAsyncLifetime
+public class DaytonaProviderIntegrationTests : IAsyncLifetime, IClassFixture<DaytonaOssContainerFixture>
 {
-    private readonly DaytonaOssContainerFixture _fixture = new();
+    private readonly DaytonaOssContainerFixture _fixture;
     private SandboxManagerService? _manager;
-    private const string DeferredReason = "Daytona OSS integration tests are deferred until stability work is scheduled.";
+
+    public DaytonaProviderIntegrationTests(DaytonaOssContainerFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     private async Task EnsureManagerAsync()
     {
@@ -48,12 +49,9 @@ public class DaytonaProviderIntegrationTests : IAsyncLifetime
         await EnsureManagerAsync();
     }
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    public Task DisposeAsync() => Task.CompletedTask;
 
-    [Fact(Skip = DeferredReason)]
+    [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_UsesDaytonaWhenConfiguredAsDefault()
     {
@@ -67,7 +65,7 @@ public class DaytonaProviderIntegrationTests : IAsyncLifetime
         Assert.True(_manager.IsActive(runId));
     }
 
-    [Fact(Skip = DeferredReason)]
+    [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_RejectsDockerSocketMount()
     {
@@ -78,7 +76,7 @@ public class DaytonaProviderIntegrationTests : IAsyncLifetime
             _manager.StartDefaultAsync(Guid.NewGuid().ToString("N"), ["/var/run/docker.sock:/var/run/docker.sock"]));
     }
 
-    [Fact(Skip = DeferredReason)]
+    [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StopAsync_CallsDaytonaApisToStopAndRemove()
     {
