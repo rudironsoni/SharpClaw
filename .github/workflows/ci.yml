@@ -101,8 +101,7 @@ jobs:
             --results-directory TestResults \
             --filter "FullyQualifiedName!~DaytonaIntegration&FullyQualifiedName!~Kubernetes&Category!=SlowIntegration&Category!=ContainerizedMock" \
             --blame-hang-timeout 5m \
-            --blame-crash \
-            --no-build
+            --blame-crash
 
       - name: Upload test results
         if: always()
@@ -163,8 +162,7 @@ jobs:
             --logger "trx;LogFileName=integration-tests.trx" \
             --results-directory TestResults \
             --filter "FullyQualifiedName~DaytonaIntegration|FullyQualifiedName~Kubernetes" \
-            --timeout 60m \
-            --no-build
+            --timeout 60m
 
       - name: Upload test results
         if: always()
