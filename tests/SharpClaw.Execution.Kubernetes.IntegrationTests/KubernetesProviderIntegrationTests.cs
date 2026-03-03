@@ -46,7 +46,8 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
         var handle = await _manager.StartDefaultAsync(runId);
 
         Assert.Equal("kubernetes", handle.Provider);
-        Assert.StartsWith("sharpclaw-", handle.SandboxId, StringComparison.Ordinal);
+        // Kubernetes provider generates sandbox IDs with "k8s--" prefix
+        Assert.Matches(@"^k8s--[a-f0-9\-]+$", handle.SandboxId);
         Assert.True(_manager.IsActive(runId));
     }
 

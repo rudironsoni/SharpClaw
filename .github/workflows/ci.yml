@@ -1,33 +1,45 @@
-name: CI (build + filtered tests)
+name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: [main, develop]
   pull_request:
     branches: ['**']
+  workflow_dispatch:
+    inputs:
+      test_tier:
+        description: 'Test tier to run'
+        required: true
+        default: 'fast'
+        type: choice
+        options:
+          - fast
+          - integration
+          - all
+  schedule:
+    # Run full test suite daily at 02:00 UTC
+    - cron: '0 2 * * *'
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
-          # Use .NET 10 for CI. If your repo relies on global.json locally, that will take precedence for developers.
           dotnet-version: '10.0.x'
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.nuget/packages
+          path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln', '**/global.json') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
+          restore-keys: ${{ runner.os }}-nuget-
 
       - name: Restore
         run: dotnet restore
@@ -35,25 +47,144 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Run unit and short tests (integration skipped)
-        env:
-          SKIP_DAYTONA_INTEGRATION: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
-        # When SKIP_DAYTONA_INTEGRATION=true we run the filtered fast test set that excludes
-        # tests requiring external infrastructure. Otherwise run the full test suite.
-        run: |
-          mkdir -p TestResults
-            # Make SKIP_DAYTONA_INTEGRATION check case-insensitive
-            if [ "${SKIP_DAYTONA_INTEGRATION,,}" = "true" ]; then
-              dotnet test --no-build --configuration Release --logger "trx;LogFileName=TestResults/test_results.trx" \
-                --results-directory TestResults --filter "Category!=ExternalInfrastructure&Category!=SlowIntegration&Category!=ContainerizedMock"
-          else
-              dotnet test --no-build --configuration Release --logger "trx;LogFileName=TestResults/test_results.trx" \
-                --results-directory TestResults
-          fi
+      - name: Pack artifacts
+        run: dotnet pack --no-build --configuration Release --output ./artifacts
 
-      - name: Upload test results on failure or cancellation
-        if: failure() || cancelled()
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: build-artifacts
+          path: |
+            artifacts/**
+          retention-days: 1
+
+  test-fast:
+    name: Fast Tests
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln', '**/global.json') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: ./artifacts
+
+      - name: Run fast tests
+        # Runs on: PRs, pushes to main/develop, workflow_dispatch (fast/all), scheduled runs
+        if: |
+          github.event_name == 'pull_request' ||
+          github.event_name == 'push' ||
+          github.event_name == 'schedule' ||
+          inputs.test_tier == 'fast' ||
+          inputs.test_tier == 'all'
+        run: |
+          mkdir -p TestResults
+          dotnet test --configuration Release \
+            --logger "trx;LogFileName=fast-tests.trx" \
+            --results-directory TestResults \
+            --filter "FullyQualifiedName!~DaytonaIntegration&FullyQualifiedName!~Kubernetes&Category!=SlowIntegration&Category!=ContainerizedMock" \
+            --blame-hang-timeout 5m \
+            --blame-crash \
+            --no-build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-test-results
           path: TestResults/**
+          retention-days: 7
+
+  test-integration:
+    name: Integration Tests
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        # Integration tests require Docker containers - free up space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          df -h
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln', '**/global.json') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: ./artifacts
+
+      - name: Run integration tests (Daytona + Kubernetes)
+        # Runs on: scheduled runs, workflow_dispatch (integration/all), NOT on PR/push
+        if: |
+          github.event_name == 'schedule' ||
+          inputs.test_tier == 'integration' ||
+          inputs.test_tier == 'all'
+        run: |
+          mkdir -p TestResults
+          dotnet test --configuration Release \
+            --logger "trx;LogFileName=integration-tests.trx" \
+            --results-directory TestResults \
+            --filter "FullyQualifiedName~DaytonaIntegration|FullyQualifiedName~Kubernetes" \
+            --timeout 60m \
+            --no-build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: TestResults/**
+          retention-days: 7
+
+      - name: Report test summary
+        if: always()
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          if [ -f TestResults/integration-tests.trx ]; then
+            total=$(grep -o 'outcome="Passed"\|outcome="Failed"\|outcome="Skipped"' TestResults/integration-tests.trx | wc -l)
+            passed=$(grep -o 'outcome="Passed"' TestResults/integration-tests.trx | wc -l)
+            failed=$(grep -o 'outcome="Failed"' TestResults/integration-tests.trx | wc -l)
+            skipped=$(grep -o 'outcome="Skipped"' TestResults/integration-tests.trx | wc -l)
+            echo "- **Total:** $total" >> $GITHUB_STEP_SUMMARY
+            echo "- **Passed:** $passed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Failed:** $failed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Skipped:** $skipped" >> $GITHUB_STEP_SUMMARY
+          fi
