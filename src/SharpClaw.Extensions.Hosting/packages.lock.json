@@ -518,6 +518,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.3, )",
+          "Microsoft.Extensions.Options": "[9.0.3, )",
           "SharpClaw.Abstractions": "[0.1.0-alpha, )",
           "SharpClaw.Execution.Abstractions": "[0.1.0-alpha, )"
         }
