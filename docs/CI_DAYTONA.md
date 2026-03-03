@@ -40,6 +40,23 @@ Required secrets and configuration
 - SHARPCLAW_DAYTONA_DB_PASSWORD (required): Password for the test database used by integration tests.
 - SHARPCLAW_DAYTONA_S3_SECRET_KEY (required): Secret key for any S3-compatible storage used during tests.
 
+Additional S3 credential constraints
+----------------------------------
+
+The Daytona fixtures validate minimal shapes for S3 credentials to avoid starting the full
+integration topology with clearly invalid values. When providing secrets to CI or local
+runners ensure:
+
+- SHARPCLAW_DAYTONA_S3_ACCESS_KEY is set and at least 3 characters long.
+- SHARPCLAW_DAYTONA_S3_SECRET_KEY is set and at least 8 characters long.
+
+If running locally you can export values in your shell before running the tests, for example:
+
+```bash
+export SHARPCLAW_DAYTONA_S3_ACCESS_KEY=myaccess
+export SHARPCLAW_DAYTONA_S3_SECRET_KEY=myverysecretkey
+```
+
 Short purpose summary:
 - SHARPCLAW_DAYTONA_API_KEY: authentication to the Daytona control plane and API operations performed by tests.
 - SHARPCLAW_DAYTONA_DB_PASSWORD: credentials for the test database instance used by integration test fixtures.

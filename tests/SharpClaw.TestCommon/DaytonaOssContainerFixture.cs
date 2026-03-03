@@ -93,6 +93,11 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private bool _started;
     private bool _disposed;
 
+    /// <summary>
+    /// Initializes the Daytona OSS container fixture and validates required credentials.
+    /// Ensures S3 credentials meet minimal length requirements to avoid starting
+    /// long-running integration fixtures with invalid configuration.
+    /// </summary>
     public DaytonaOssContainerFixture()
     {
         ApiKey = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_API_KEY") ?? "test-api-key";
@@ -109,6 +114,18 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
         _dbPassword = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_DB_PASSWORD") ?? "daytona";
         _s3AccessKey = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_ACCESS_KEY") ?? "daytona";
         _s3SecretKey = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_SECRET_KEY") ?? "daytona-secret";
+
+        // Validate S3 credential shapes early to fail fast with a descriptive error
+        // instead of starting long-running container fixtures with invalid secrets.
+        if (string.IsNullOrEmpty(_s3AccessKey) || _s3AccessKey.Length < 3)
+        {
+            throw new InvalidOperationException("SHARPCLAW_DAYTONA_S3_ACCESS_KEY must be set and be at least 3 characters long. If running locally set via export SHARPCLAW_DAYTONA_S3_ACCESS_KEY=...");
+        }
+
+        if (string.IsNullOrEmpty(_s3SecretKey) || _s3SecretKey.Length < 8)
+        {
+            throw new InvalidOperationException("SHARPCLAW_DAYTONA_S3_SECRET_KEY must be set and be at least 8 characters long. If running locally set via export SHARPCLAW_DAYTONA_S3_SECRET_KEY=...");
+        }
         _s3Bucket = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_BUCKET") ?? "daytona";
         _s3Region = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_REGION") ?? "us-east-1";
         _dexConfigPath = Path.Combine(Path.GetTempPath(), $"sharpclaw-dex-{Guid.NewGuid():N}.yaml");
