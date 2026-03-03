@@ -6,6 +6,7 @@ using SharpClaw.OpenResponses.HttpApi;
 
 namespace SharpClaw.OpenResponses.End2EndTests;
 
+[Trait("Category", "ExternalInfrastructure")]
 public class OpenResponsesEnd2EndTests(WebApplicationFactory<Program> factory)
     : IClassFixture<WebApplicationFactory<Program>>
 {

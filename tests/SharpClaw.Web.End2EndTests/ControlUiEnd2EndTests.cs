@@ -6,6 +6,7 @@ using SharpClaw.Web.IntegrationTests;
 
 namespace SharpClaw.Web.End2EndTests;
 
+[Trait("Category", "ExternalInfrastructure")]
 public class ControlUiEnd2EndTests(SharpClawWebApplicationFactory factory)
     : IClassFixture<SharpClawWebApplicationFactory>
 {

@@ -7,6 +7,7 @@ using SharpClaw.Web;
 
 namespace SharpClaw.Web.IntegrationTests;
 
+[Trait("Category", "ExternalInfrastructure")]
 public class ControlUiIntegrationTests(SharpClawWebApplicationFactory factory)
     : IClassFixture<SharpClawWebApplicationFactory>
 {
