@@ -162,7 +162,7 @@ public class JwtTokenServiceTests
             IsPaired = true
         };
 
-        Assert.Throws<ArgumentException>(() => _tokenService.GenerateToken(device));
+        Assert.Throws<ArgumentNullException>(() => _tokenService.GenerateToken(device));
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public class JwtTokenServiceTests
             IsPaired = true
         };
 
-        Assert.Throws<ArgumentException>(() => _tokenService.GenerateToken(device));
+        Assert.Throws<ArgumentNullException>(() => _tokenService.GenerateToken(device));
     }
 
     [Fact]

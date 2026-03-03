@@ -9,6 +9,10 @@ public sealed class JwtTokenService : ITokenService
 {
     public string GenerateToken(DeviceIdentity device)
     {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentException.ThrowIfNullOrWhiteSpace(device.DeviceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(device.TenantId);
+
         // Simple token generation for now - replace with JWT in production
         return $"{device.DeviceId}:{device.TenantId}:{DateTimeOffset.UtcNow.Ticks}";
     }

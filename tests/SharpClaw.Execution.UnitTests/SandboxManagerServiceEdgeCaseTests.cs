@@ -195,9 +195,11 @@ public class SandboxManagerServiceEdgeCaseTests
             new FakeSandboxProvider("podman")
         };
 
+        var policy = new ExecutionProviderPolicy(DefaultProvider: "docker");
         var service = new SandboxManagerService(
             providers,
-            NullLogger<SandboxManagerService>.Instance);
+            NullLogger<SandboxManagerService>.Instance,
+            policy);
 
         var request = new SandboxStartRequest(
             RunId: "run-1",
@@ -248,7 +250,7 @@ public class SandboxManagerServiceEdgeCaseTests
     {
         var service = CreateService();
 
-        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
             await service.StopSandboxAsync(null!);
         });
@@ -338,7 +340,7 @@ public class SandboxManagerServiceEdgeCaseTests
     {
         var service = CreateService();
 
-        Assert.Throws<ArgumentException>(() => service.IsActive(null!));
+        Assert.Throws<ArgumentNullException>(() => service.IsActive(null!));
     }
 
     #endregion

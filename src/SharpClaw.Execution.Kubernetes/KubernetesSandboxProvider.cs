@@ -89,6 +89,7 @@ public sealed class KubernetesSandboxProvider : ISandboxProvider, IDisposable
         if (!string.IsNullOrWhiteSpace(_kubeServerHost) &&
             (_kubeServerHost.Contains("localhost") || _kubeServerHost.Contains("127.0.0.1")))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             await Task.Yield();
             return new SandboxHandle(Name, podName);
         }

@@ -103,12 +103,32 @@ public sealed class SandboxManagerService
     {
         _providers = providers.ToDictionary(static provider => provider.Name, StringComparer.OrdinalIgnoreCase);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _policy = policy ?? new ExecutionProviderPolicy();
+        var selectedPolicy = policy ?? new ExecutionProviderPolicy();
 
-        if (!_providers.ContainsKey(_policy.DefaultProvider))
+        // If no providers were supplied, fail fast — there's nothing we can do.
+        if (_providers.Count == 0)
         {
-            throw new InvalidOperationException($"Default sandbox provider '{_policy.DefaultProvider}' is not registered.");
+            throw new InvalidOperationException("No sandbox providers were registered.");
         }
+
+        // If the configured default provider is not registered, but exactly one provider
+        // was supplied, prefer that provider as the default. This keeps unit tests and
+        // simple host scenarios ergonomic (single-provider setups should work without
+        // explicitly specifying the default provider).
+        if (!_providers.ContainsKey(selectedPolicy.DefaultProvider))
+        {
+            if (_providers.Count == 1)
+            {
+                var single = _providers.Keys.First();
+                selectedPolicy = new ExecutionProviderPolicy(DefaultProvider: single, FallbackProvider: selectedPolicy.FallbackProvider, EnabledProviders: selectedPolicy.EnabledProviders);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Default sandbox provider '{selectedPolicy.DefaultProvider}' is not registered.");
+            }
+        }
+
+        _policy = selectedPolicy;
     }
 
     public SandboxManagerService(
@@ -158,6 +178,11 @@ public sealed class SandboxManagerService
                 _active.TryAdd(request.RunId, handle);
                 _logger.LogInformation("Successfully started sandbox for RunId {RunId} using provider {Provider}.", request.RunId, candidate);
                 return handle;
+            }
+            catch (OperationCanceledException)
+            {
+                // Let cancellation propagate without wrapping
+                throw;
             }
             catch (Exception ex)
             {

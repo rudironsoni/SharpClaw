@@ -113,7 +113,7 @@ public class ConnectionRegistryTests
     {
         var registry = new ConnectionRegistry();
 
-        Assert.Throws<ArgumentException>(() => registry.TryConnect(null!));
+        Assert.Throws<ArgumentNullException>(() => registry.TryConnect(null!));
         Assert.Throws<ArgumentException>(() => registry.TryConnect(""));
         Assert.Throws<ArgumentException>(() => registry.TryConnect("   "));
     }
@@ -123,7 +123,7 @@ public class ConnectionRegistryTests
     {
         var registry = new ConnectionRegistry();
 
-        Assert.Throws<ArgumentException>(() => registry.TryDisconnect(null!));
+        Assert.Throws<ArgumentNullException>(() => registry.TryDisconnect(null!));
         Assert.Throws<ArgumentException>(() => registry.TryDisconnect(""));
         Assert.Throws<ArgumentException>(() => registry.TryDisconnect("   "));
     }
@@ -241,7 +241,7 @@ public class ConnectionRegistryTests
         var baseRegistry = new ConnectionRegistry();
         var keepaliveRegistry = new KeepaliveEnabledConnectionRegistry(baseRegistry, null);
 
-        Assert.Throws<ArgumentException>(() => keepaliveRegistry.TryConnect(null!));
+        Assert.Throws<ArgumentNullException>(() => keepaliveRegistry.TryConnect(null!));
         Assert.Throws<ArgumentException>(() => keepaliveRegistry.TryConnect(""));
     }
 
@@ -251,7 +251,7 @@ public class ConnectionRegistryTests
         var baseRegistry = new ConnectionRegistry();
         var keepaliveRegistry = new KeepaliveEnabledConnectionRegistry(baseRegistry, null);
 
-        Assert.Throws<ArgumentException>(() => keepaliveRegistry.TryDisconnect(null!));
+        Assert.Throws<ArgumentNullException>(() => keepaliveRegistry.TryDisconnect(null!));
         Assert.Throws<ArgumentException>(() => keepaliveRegistry.TryDisconnect(""));
     }
 

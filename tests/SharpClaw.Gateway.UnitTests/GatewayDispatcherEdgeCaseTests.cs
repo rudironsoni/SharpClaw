@@ -244,11 +244,11 @@ public class GatewayDispatcherEdgeCaseTests
     #region Argument Validation Tests
 
     [Fact]
-    public void Register_NullMethod_ThrowsArgumentException()
+    public void Register_NullMethod_ThrowsArgumentNullException()
     {
         var dispatcher = CreateDispatcher(out _);
 
-        Assert.Throws<ArgumentException>(() =>
+        Assert.Throws<ArgumentNullException>(() =>
             dispatcher.Register(null!, FrozenSet<string>.Empty, (request, _, _) => Task.FromResult(new ResponseFrame(request.Id, true))));
     }
 
@@ -374,7 +374,7 @@ public class GatewayDispatcherEdgeCaseTests
 
         cts.CancelAfter(TimeSpan.FromMilliseconds(50));
 
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        await Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
             await dispatcher.DispatchAsync(
                 new RequestFrame("id-1", "slow.method"),
