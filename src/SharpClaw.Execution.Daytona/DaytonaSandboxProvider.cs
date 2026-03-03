@@ -12,10 +12,11 @@ namespace SharpClaw.Execution.Daytona;
 /// </summary>
 public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
 {
-    private HttpClient _httpClient = null!;
+    private HttpClient? _httpClient;
     private readonly ILogger<DaytonaSandboxProvider> _logger;
-    private string _apiKey = string.Empty;
+    private string? _apiKey;
     private string _serverUrl = string.Empty;
+    private bool _isConfigured;
 
     public string Name => "daytona";
 
@@ -34,7 +35,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
         /// <summary>
         /// New constructor that supports options pattern via IOptionsMonitor&lt;DaytonaOptions&gt;.
         /// Precedence for values:
-        /// ApiKey: apiKey param -> optionsMonitor.CurrentValue?.ApiKey -> SHARPCLAW_DAYTONA_API_KEY env var -> throw
+        /// ApiKey: apiKey param -> optionsMonitor.CurrentValue?.ApiKey -> SHARPCLAW_DAYTONA_API_KEY env var -> null (lazy fail)
         /// ServerUrl: serverUrl param -> optionsMonitor.CurrentValue?.ServerUrl -> default
         /// </summary>
         public DaytonaSandboxProvider(
@@ -66,7 +67,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
             // 1) constructor parameter
             // 2) IOptionsMonitor value (handled by caller for the options-enabled ctor)
             // 3) SHARPCLAW_DAYTONA_API_KEY environment variable (fallback)
-            // 4) throw if none provided
+            // 4) null if none provided (lazy fail when actually used)
             var resolvedApiKey = apiKeyParam;
 
             var usedFallback = false;
@@ -79,14 +80,11 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(resolvedApiKey))
-            {
-                throw new InvalidOperationException("Daytona API key not provided. Provide via IOptions<DaytonaOptions> or set SHARPCLAW_DAYTONA_API_KEY environment variable.");
-            }
+            // Store API key even if null - we'll fail lazily when StartAsync is called
+            _apiKey = resolvedApiKey;
+            _isConfigured = !string.IsNullOrWhiteSpace(resolvedApiKey);
 
-            _apiKey = resolvedApiKey!;
-
-            if (usedFallback)
+            if (usedFallback && _isConfigured)
             {
                 try
                 {
@@ -98,20 +96,35 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
                 }
             }
 
-            _httpClient = new HttpClient
+            if (_isConfigured)
             {
-                BaseAddress = new Uri(_serverUrl),
-                Timeout = TimeSpan.FromMinutes(5)
-            };
+                _httpClient = new HttpClient
+                {
+                    BaseAddress = new Uri(_serverUrl),
+                    Timeout = TimeSpan.FromMinutes(5)
+                };
 
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+                _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            _logger.LogInformation("Daytona sandbox provider initialized with server: {ServerUrl}", _serverUrl);
+                _logger.LogInformation("Daytona sandbox provider initialized with server: {ServerUrl}", _serverUrl);
+            }
+            else
+            {
+                _logger.LogWarning("Daytona sandbox provider not configured - API key not provided. Provider will fail when used.");
+            }
         }
 
     public async Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
     {
+        // Early exit: fail fast if provider not configured
+        if (!_isConfigured || _httpClient is null)
+        {
+            throw new InvalidOperationException(
+                "Daytona API key not provided. Provide via IOptions<DaytonaOptions> or set SHARPCLAW_DAYTONA_API_KEY environment variable.");
+        }
+
+        var httpClient = _httpClient;
         var workspaceId = $"sharpclaw-{Guid.NewGuid():N}";
 
         // Early exit on cancellation to provide deterministic exception type for callers/tests
@@ -151,7 +164,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
                 return new SandboxHandle(Name, workspaceId);
             }
 
-            var response = await _httpClient.PostAsJsonAsync(
+            var response = await httpClient.PostAsJsonAsync(
                 "api/workspace",
                 createRequest,
                 cancellationToken);
@@ -182,18 +195,27 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
 
     public async Task StopAsync(SandboxHandle handle, CancellationToken cancellationToken = default)
     {
+        // Early exit: fail fast if provider not configured
+        if (!_isConfigured || _httpClient is null)
+        {
+            throw new InvalidOperationException(
+                "Daytona API key not provided. Provide via IOptions<DaytonaOptions> or set SHARPCLAW_DAYTONA_API_KEY environment variable.");
+        }
+
+        var httpClient = _httpClient;
+
         if (handle.Provider != Name)
         {
             throw new InvalidOperationException($"Provider mismatch: expected {Name}, got {handle.Provider}");
         }
 
         var workspaceId = handle.SandboxId;
-        
+
         _logger.LogInformation("Stopping Daytona workspace: {WorkspaceId}", workspaceId);
 
         try
         {
-            var stopResponse = await _httpClient.PostAsync(
+            var stopResponse = await httpClient.PostAsync(
                 $"api/workspace/{workspaceId}/stop",
                 null,
                 cancellationToken);
@@ -212,7 +234,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
 
         try
         {
-            var removeResponse = await _httpClient.DeleteAsync(
+            var removeResponse = await httpClient.DeleteAsync(
                 $"api/workspace/{workspaceId}",
                 cancellationToken);
 
@@ -231,6 +253,12 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
 
     private async Task WaitForWorkspaceReadyAsync(string workspaceId, CancellationToken cancellationToken)
     {
+        if (_httpClient is null)
+        {
+            throw new InvalidOperationException("HttpClient not initialized.");
+        }
+
+        var httpClient = _httpClient;
         var timeout = TimeSpan.FromMinutes(5);
         var startTime = DateTime.UtcNow;
 
@@ -238,7 +266,7 @@ public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var response = await _httpClient.GetAsync(
+            var response = await httpClient.GetAsync(
                 $"api/workspace/{workspaceId}",
                 cancellationToken);
 
