@@ -214,11 +214,6 @@
           "System.CodeDom": "6.0.0"
         }
       },
-      "Newtonsoft.Json": {
-        "type": "Transitive",
-        "resolved": "13.0.1",
-        "contentHash": "ppPFpBcvxdsfUonNcvITKqLl3bqxWbDCZIzDWHzjpdAHRFfZe0Dw9HmA0+za13IdyrgJwpkDTDA9fHaxOrt20A=="
-      },
       "SQLitePCLRaw.bundle_e_sqlite3": {
         "type": "Transitive",
         "resolved": "2.1.10",
@@ -345,6 +340,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.3, )",
+          "Microsoft.Extensions.Options": "[9.0.3, )",
           "SharpClaw.Abstractions": "[0.1.0-alpha, )",
           "SharpClaw.Execution.Abstractions": "[0.1.0-alpha, )"
         }
@@ -352,7 +348,7 @@
       "sharpclaw.execution.docker": {
         "type": "Project",
         "dependencies": {
-          "Docker.DotNet": "[3.125.15, )",
+          "Docker.DotNet.Enhanced": "[3.131.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.3, )",
           "SharpClaw.Abstractions": "[0.1.0-alpha, )",
           "SharpClaw.Execution.Abstractions": "[0.1.0-alpha, )"
@@ -517,13 +513,13 @@
           "SharpClaw.Tenancy": "[0.1.0-alpha, )"
         }
       },
-      "Docker.DotNet": {
+      "Docker.DotNet.Enhanced": {
         "type": "CentralTransitive",
-        "requested": "[3.125.15, )",
-        "resolved": "3.125.15",
-        "contentHash": "XN8FKxVv8Mjmwu104/Hl9lM61pLY675s70gzwSj8KR5pwblo8HfWLcCuinh9kYsqujBkMH4HVRCEcRuU6al4BQ==",
+        "requested": "[3.131.1, )",
+        "resolved": "3.131.1",
+        "contentHash": "hGLHCNUsQbT2Ab/HUznRnNqYZQs40zInXa3eLwYjeNyfUYbw1pqqDGqcOLl5uGepS8IuigEYakEdAcVT/2ezYg==",
         "dependencies": {
-          "Newtonsoft.Json": "13.0.1"
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
         }
       },
       "KubernetesClient": {
