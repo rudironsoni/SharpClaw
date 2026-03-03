@@ -38,7 +38,8 @@ Required secrets and configuration
 
 - SHARPCLAW_DAYTONA_API_KEY (required): API key used by the Daytona test harness to authenticate against the Daytona control plane.
 - SHARPCLAW_DAYTONA_DB_PASSWORD (required): Password for the test database used by integration tests.
-- SHARPCLAW_DAYTONA_S3_SECRET_KEY (required): Secret key for any S3-compatible storage used during tests.
+- SHARPCLAW_DAYTONA_S3_ACCESS_KEY (recommended / default exists): S3 access key used by the MinIO test instance. A sensible default of "daytona" is used when this variable is not provided, but CI should set this secret to avoid using defaults. When provided, the value must be at least 3 characters long.
+- SHARPCLAW_DAYTONA_S3_SECRET_KEY (recommended / default exists): Secret key for any S3-compatible storage used during tests. A default exists (not printed in logs) but CI should set the secret; when provided it must be at least 8 characters long.
 
 Additional S3 credential constraints
 ----------------------------------
@@ -47,8 +48,8 @@ The Daytona fixtures validate minimal shapes for S3 credentials to avoid startin
 integration topology with clearly invalid values. When providing secrets to CI or local
 runners ensure:
 
-- SHARPCLAW_DAYTONA_S3_ACCESS_KEY is set and at least 3 characters long.
-- SHARPCLAW_DAYTONA_S3_SECRET_KEY is set and at least 8 characters long.
+- SHARPCLAW_DAYTONA_S3_ACCESS_KEY, when provided, is at least 3 characters long. If absent a default of "daytona" will be used (a warning is emitted).
+- SHARPCLAW_DAYTONA_S3_SECRET_KEY, when provided, is at least 8 characters long. If absent a default will be used (a warning is emitted); the secret value itself is never printed to logs.
 
 If running locally you can export values in your shell before running the tests, for example:
 

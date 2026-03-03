@@ -97,6 +97,10 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     /// Initializes the Daytona OSS container fixture and validates required credentials.
     /// Ensures S3 credentials meet minimal length requirements to avoid starting
     /// long-running integration fixtures with invalid configuration.
+    /// 
+    /// Validation and defaults:
+    /// - Reads raw environment variables for S3 access/secret keys and validates their shape when provided.
+    /// - If an environment variable is absent, a safe default is used and a warning is emitted to stderr.
     /// </summary>
     public DaytonaOssContainerFixture()
     {
@@ -112,19 +116,38 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
         _dbName = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_DB_NAME") ?? "daytona";
         _dbUser = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_DB_USER") ?? "daytona";
         _dbPassword = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_DB_PASSWORD") ?? "daytona";
-        _s3AccessKey = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_ACCESS_KEY") ?? "daytona";
-        _s3SecretKey = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_SECRET_KEY") ?? "daytona-secret";
+        // Read raw environment variables first so we can decide whether to validate or use defaults.
+        var s3AccessKeyEnv = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_ACCESS_KEY");
+        var s3SecretKeyEnv = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_SECRET_KEY");
 
-        // Validate S3 credential shapes early to fail fast with a descriptive error
-        // instead of starting long-running container fixtures with invalid secrets.
-        if (string.IsNullOrEmpty(_s3AccessKey) || _s3AccessKey.Length < 3)
+        if (!string.IsNullOrEmpty(s3AccessKeyEnv))
         {
-            throw new InvalidOperationException("SHARPCLAW_DAYTONA_S3_ACCESS_KEY must be set and be at least 3 characters long. If running locally set via export SHARPCLAW_DAYTONA_S3_ACCESS_KEY=...");
+            // Use provided value but validate shape to fail fast on obvious misconfiguration.
+            _s3AccessKey = s3AccessKeyEnv;
+            if (_s3AccessKey.Length < 3)
+            {
+                throw new InvalidOperationException("SHARPCLAW_DAYTONA_S3_ACCESS_KEY must be at least 3 characters long. Example: export SHARPCLAW_DAYTONA_S3_ACCESS_KEY=daytonauser");
+            }
+        }
+        else
+        {
+            // Use safe default and warn (do NOT log secrets).
+            _s3AccessKey = "daytona";
+            Console.Error.WriteLine("Warning: using default SHARPCLAW_DAYTONA_S3_ACCESS_KEY 'daytona'. For CI set SHARPCLAW_DAYTONA_S3_ACCESS_KEY as a secret.");
         }
 
-        if (string.IsNullOrEmpty(_s3SecretKey) || _s3SecretKey.Length < 8)
+        if (!string.IsNullOrEmpty(s3SecretKeyEnv))
         {
-            throw new InvalidOperationException("SHARPCLAW_DAYTONA_S3_SECRET_KEY must be set and be at least 8 characters long. If running locally set via export SHARPCLAW_DAYTONA_S3_SECRET_KEY=...");
+            _s3SecretKey = s3SecretKeyEnv;
+            if (_s3SecretKey.Length < 8)
+            {
+                throw new InvalidOperationException("SHARPCLAW_DAYTONA_S3_SECRET_KEY must be at least 8 characters long. Example: export SHARPCLAW_DAYTONA_S3_SECRET_KEY=myverysecret");
+            }
+        }
+        else
+        {
+            _s3SecretKey = "daytona-secret";
+            Console.Error.WriteLine("Warning: using default SHARPCLAW_DAYTONA_S3_SECRET_KEY. For CI set SHARPCLAW_DAYTONA_S3_SECRET_KEY as a secret.");
         }
         _s3Bucket = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_BUCKET") ?? "daytona";
         _s3Region = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_REGION") ?? "us-east-1";
