@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SharpClaw.Execution.Abstractions;
 
 namespace SharpClaw.Execution.Daytona;
@@ -11,34 +12,103 @@ namespace SharpClaw.Execution.Daytona;
 /// </summary>
 public sealed class DaytonaSandboxProvider : ISandboxProvider, IDisposable
 {
-    private readonly HttpClient _httpClient;
+    private HttpClient _httpClient = null!;
     private readonly ILogger<DaytonaSandboxProvider> _logger;
-    private readonly string _apiKey;
-    private readonly string _serverUrl;
+    private string _apiKey = string.Empty;
+    private string _serverUrl = string.Empty;
 
     public string Name => "daytona";
 
-    public DaytonaSandboxProvider(
+        public DaytonaSandboxProvider(
         ILogger<DaytonaSandboxProvider> logger,
         string? serverUrl = null,
         string? apiKey = null)
-    {
-        _logger = logger;
-        _serverUrl = serverUrl ?? "https://api.daytona.io";
-        _apiKey = apiKey ?? Environment.GetEnvironmentVariable("DAYTONA_API_KEY") 
-            ?? throw new InvalidOperationException("Daytona API key not provided");
-
-        _httpClient = new HttpClient
         {
-            BaseAddress = new Uri(_serverUrl),
-            Timeout = TimeSpan.FromMinutes(5)
-        };
+            // Backwards-compatible constructor: prefer explicit parameters, then SHARPCLAW env var.
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            // Initialize using the same internal init path to avoid duplicate logic.
+            Initialize(apiKey, serverUrl);
+        }
 
-        _logger.LogInformation("Daytona sandbox provider initialized with server: {ServerUrl}", _serverUrl);
-    }
+        /// <summary>
+        /// New constructor that supports options pattern via IOptionsMonitor&lt;DaytonaOptions&gt;.
+        /// Precedence for values:
+        /// ApiKey: apiKey param -> optionsMonitor.CurrentValue?.ApiKey -> SHARPCLAW_DAYTONA_API_KEY env var -> throw
+        /// ServerUrl: serverUrl param -> optionsMonitor.CurrentValue?.ServerUrl -> default
+        /// </summary>
+        public DaytonaSandboxProvider(
+            ILogger<DaytonaSandboxProvider> logger,
+            IOptionsMonitor<DaytonaOptions> optionsMonitor,
+            string? serverUrl = null,
+            string? apiKey = null)
+        {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            var opts = optionsMonitor?.CurrentValue;
+
+            string? chosenApiKey = !string.IsNullOrWhiteSpace(apiKey)
+                ? apiKey
+                : !string.IsNullOrWhiteSpace(opts?.ApiKey) ? opts!.ApiKey : null;
+
+            string? chosenServerUrl = !string.IsNullOrWhiteSpace(serverUrl)
+                ? serverUrl
+                : !string.IsNullOrWhiteSpace(opts?.ServerUrl) ? opts!.ServerUrl : null;
+
+            Initialize(chosenApiKey, chosenServerUrl);
+        }
+
+        private void Initialize(string? apiKeyParam, string? serverUrlParam)
+        {
+            _serverUrl = !string.IsNullOrWhiteSpace(serverUrlParam) ? serverUrlParam! : "https://api.daytona.io";
+
+            // Resolve API key with precedence:
+            // 1) constructor parameter
+            // 2) IOptionsMonitor value (handled by caller for the options-enabled ctor)
+            // 3) SHARPCLAW_DAYTONA_API_KEY environment variable (fallback)
+            // 4) throw if none provided
+            var resolvedApiKey = apiKeyParam;
+
+            var usedFallback = false;
+            if (string.IsNullOrWhiteSpace(resolvedApiKey))
+            {
+                resolvedApiKey = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_API_KEY");
+                if (!string.IsNullOrWhiteSpace(resolvedApiKey))
+                {
+                    usedFallback = true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedApiKey))
+            {
+                throw new InvalidOperationException("Daytona API key not provided. Provide via IOptions<DaytonaOptions> or set SHARPCLAW_DAYTONA_API_KEY environment variable.");
+            }
+
+            _apiKey = resolvedApiKey!;
+
+            if (usedFallback)
+            {
+                try
+                {
+                    Console.Error.WriteLine("Warning: SHARPCLAW_DAYTONA_API_KEY environment variable is being used as a fallback for Daytona API key");
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+
+            _httpClient = new HttpClient
+            {
+                BaseAddress = new Uri(_serverUrl),
+                Timeout = TimeSpan.FromMinutes(5)
+            };
+
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            _logger.LogInformation("Daytona sandbox provider initialized with server: {ServerUrl}", _serverUrl);
+        }
 
     public async Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
     {
