@@ -99,7 +99,7 @@ jobs:
           dotnet test --configuration Release \
             --logger "trx;LogFileName=fast-tests.trx" \
             --results-directory TestResults \
-            --filter "FullyQualifiedName!~DaytonaIntegration&FullyQualifiedName!~Kubernetes&Category!=SlowIntegration&Category!=ContainerizedMock" \
+            --filter "Category!=ExternalInfrastructure&Category!=SlowIntegration&Category!=ContainerizedMock&FullyQualifiedName!~DaytonaIntegration&FullyQualifiedName!~Kubernetes" \
             --blame-hang-timeout 5m \
             --blame-crash
 

@@ -6,6 +6,7 @@ using Xunit;
 
 namespace SharpClaw.Execution.Daytona.IntegrationTests;
 
+[Trait("Category", "ExternalInfrastructure")]
 public class DaytonaProviderIntegrationTests : IAsyncLifetime, IClassFixture<DaytonaOssContainerFixture>
 {
     private readonly DaytonaOssContainerFixture _fixture;

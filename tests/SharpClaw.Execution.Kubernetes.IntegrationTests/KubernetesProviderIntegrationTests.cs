@@ -5,6 +5,7 @@ using SharpClaw.TestCommon;
 
 namespace SharpClaw.Execution.Kubernetes.IntegrationTests;
 
+[Trait("Category", "ExternalInfrastructure")]
 public class KubernetesProviderIntegrationTests : IAsyncLifetime
 {
     private readonly K3sClusterFixture _fixture = new();
