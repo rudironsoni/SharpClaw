@@ -15,8 +15,8 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="9.0.2" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.3" />
- <!-- Docker -->
- <PackageVersion Include="Docker.DotNet" Version="3.125.15" />
+    <!-- Docker -->
+    <PackageVersion Include="Docker.DotNet" Version="3.125.15" />
     <!-- Kubernetes -->
     <PackageVersion Include="KubernetesClient" Version="18.0.4" />
     <!-- Azure -->

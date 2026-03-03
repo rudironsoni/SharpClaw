@@ -1,19 +1,14 @@
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpClaw.Execution.Abstractions;
 using SharpClaw.Execution.Docker;
 using SharpClaw.Execution.Podman;
 using SharpClaw.Execution.SandboxManager;
-using Xunit;
 
 namespace SharpClaw.Execution.UnitTests;
 
 public class SandboxManagerUnitTests
 {
-    [Fact(Skip = "Docker.DotNet assembly conflict with Testcontainers' Docker.DotNet.Enhanced - requires Docker daemon")]
+    [Fact]
     public async Task StartSandboxAsync_UsesSelectedProvider()
     {
         var manager = new SandboxManagerService(
@@ -27,7 +22,7 @@ public class SandboxManagerUnitTests
         Assert.True(manager.IsActive(runId));
     }
 
-    [Fact(Skip = "Docker.DotNet assembly conflict with Testcontainers' Docker.DotNet.Enhanced - requires Docker daemon")]
+    [Fact]
     public async Task StopSandboxAsync_RemovesActiveHandle()
     {
         var manager = new SandboxManagerService(
@@ -46,7 +41,7 @@ public class SandboxManagerUnitTests
     public async Task StartSandboxAsync_ThrowsForUnknownProvider()
     {
         var manager = new SandboxManagerService(
-            [new MockProvider("dind")],
+            [new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance)],
             NullLogger<SandboxManagerService>.Instance);
 
         var runId = Guid.NewGuid().ToString("N");
@@ -58,7 +53,7 @@ public class SandboxManagerUnitTests
     public async Task StartSandboxAsync_RejectsHostDockerSocketMount()
     {
         var manager = new SandboxManagerService(
-            [new MockProvider("dind")],
+            [new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance)],
             NullLogger<SandboxManagerService>.Instance);
 
         var runId = Guid.NewGuid().ToString("N");
@@ -70,7 +65,7 @@ public class SandboxManagerUnitTests
     public async Task StartSandboxAsync_FallsBackToPodman_WhenDefaultProviderFails()
     {
         var failing = new ThrowingProvider("dind");
-        var podman = new MockProvider("podman");
+        var podman = new PodmanSandboxProvider();
         var policy = new ExecutionProviderPolicy(DefaultProvider: "dind", FallbackProvider: "podman");
         var manager = new SandboxManagerService(
             [failing, podman],
@@ -88,7 +83,7 @@ public class SandboxManagerUnitTests
     public async Task StartSandboxAsync_DoesNotFallback_WhenAllowFallbackFalse()
     {
         var failing = new ThrowingProvider("dind");
-        var podman = new MockProvider("podman");
+        var podman = new PodmanSandboxProvider();
         var policy = new ExecutionProviderPolicy(DefaultProvider: "dind", FallbackProvider: "podman");
         var manager = new SandboxManagerService(
             [failing, podman],
@@ -109,15 +104,16 @@ public class SandboxManagerUnitTests
             EnabledProviders: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "podman" });
 
         var manager = new SandboxManagerService(
-            [new MockProvider("dind"), new MockProvider("podman")],
-            NullLogger<SandboxManagerService>.Instance, policy);
+            [new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance), new PodmanSandboxProvider()],
+            NullLogger<SandboxManagerService>.Instance,
+            policy);
 
         var runId = Guid.NewGuid().ToString("N");
         var handle = await manager.StartDefaultAsync(runId);
 
         Assert.Equal("podman", handle.Provider);
     }
-
+    
     [Fact]
     public async Task StartSandboxAsync_IsIdempotent_ForSameRunId()
     {
@@ -138,8 +134,8 @@ public class SandboxManagerUnitTests
     [Fact]
     public async Task StartAndStop_ConcurrentExecution_DoesNotLeakSandbox()
     {
-        var startCompletionSource = new TaskCompletionSource<bool>();
-        var stopRequestSource = new TaskCompletionSource<bool>();
+        var startCompletionSource = new TaskCompletionSource();
+        var stopRequestSource = new TaskCompletionSource();
 
         var provider = new DelayedStartProvider("dind", startCompletionSource, stopRequestSource);
         var manager = new SandboxManagerService(
@@ -155,33 +151,33 @@ public class SandboxManagerUnitTests
         await startCompletionSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // At this point, StartSandboxAsync has not yet added the handle to _active because it is awaiting StopRequestSource
- // Now call StopSandboxAsync concurrently. It should wait because the runId is locked.
+        // Now call StopSandboxAsync concurrently. It should wait because the runId is locked.
         var stopTask = manager.StopSandboxAsync(runId);
 
         // Ensure stopTask hasn't completed yet, since it's waiting on the lock
         await Task.Delay(50);
         Assert.False(stopTask.IsCompleted);
 
- // Allow StartAsync to finish
- stopRequestSource.SetResult(true);
+        // Allow StartAsync to finish
+        stopRequestSource.SetResult();
 
         // Now both should complete
         await Task.WhenAll(startTask, stopTask).WaitAsync(TimeSpan.FromSeconds(5));
 
-        // The sandbox should be stopped and not active
+        // The sandbox must be stopped and not active
         Assert.False(manager.IsActive(runId));
         Assert.Equal(1, provider.StopCount);
     }
 
-    private sealed class DelayedStartProvider(string name, TaskCompletionSource<bool> startCalled, TaskCompletionSource<bool> allowStartToFinish) : ISandboxProvider
+    private sealed class DelayedStartProvider(string name, TaskCompletionSource startCalled, TaskCompletionSource allowStartToFinish) : ISandboxProvider
     {
         public string Name => name;
         public int StopCount { get; private set; }
 
         public async Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
         {
- startCalled.SetResult(true);
- await allowStartToFinish.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            startCalled.SetResult();
+            await allowStartToFinish.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
             return new SandboxHandle(name, Guid.NewGuid().ToString());
         }
 
@@ -199,21 +195,6 @@ public class SandboxManagerUnitTests
         public Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException($"Provider {name} failed to start");
-        }
-
-        public Task StopAsync(SandboxHandle handle, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class MockProvider(string name) : ISandboxProvider
-    {
-        public string Name => name;
-
-        public Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(new SandboxHandle(name, Guid.NewGuid().ToString()));
         }
 
         public Task StopAsync(SandboxHandle handle, CancellationToken cancellationToken = default)
