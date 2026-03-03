@@ -149,6 +149,7 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
             _s3SecretKey = "daytona-secret";
             Console.Error.WriteLine("Warning: using default SHARPCLAW_DAYTONA_S3_SECRET_KEY. For CI set SHARPCLAW_DAYTONA_S3_SECRET_KEY as a secret.");
         }
+
         _s3Bucket = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_BUCKET") ?? "daytona";
         _s3Region = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_REGION") ?? "us-east-1";
         _dexConfigPath = Path.Combine(Path.GetTempPath(), $"sharpclaw-dex-{Guid.NewGuid():N}.yaml");
