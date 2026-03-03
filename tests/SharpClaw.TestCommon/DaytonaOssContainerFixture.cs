@@ -133,7 +133,7 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
         {
             // Use safe default and warn (do NOT log secrets).
             _s3AccessKey = "daytona";
-            Console.Error.WriteLine("Warning: using default SHARPCLAW_DAYTONA_S3_ACCESS_KEY 'daytona'. For CI set SHARPCLAW_DAYTONA_S3_ACCESS_KEY as a secret.");
+            Console.Error.WriteLine("Warning: using default SHARPCLAW_DAYTONA_S3_ACCESS_KEY. For CI set SHARPCLAW_DAYTONA_S3_ACCESS_KEY as a secret.");
         }
 
         if (!string.IsNullOrEmpty(s3SecretKeyEnv))
