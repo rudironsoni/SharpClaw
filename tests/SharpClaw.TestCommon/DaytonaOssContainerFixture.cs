@@ -438,6 +438,13 @@ RUNNER_ENV_FILE_MOUNTED=true
             return;
         }
 
+        // Skip container startup in CI to avoid .env file issues
+        if (Environment.GetEnvironmentVariable("SKIP_DAYTONA_INTEGRATION") == "true")
+        {
+            Console.Error.WriteLine("[Daytona] Skipping container startup - SKIP_DAYTONA_INTEGRATION is set");
+            return;
+        }
+
         try
         {
             await _network.CreateAsync();
