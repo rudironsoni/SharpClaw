@@ -82,7 +82,6 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private readonly string _s3Bucket;
     private readonly string _s3Region;
     private readonly string _dexConfigPath;
-    private readonly string _runnerEnvFilePath;
     private readonly string? _proxyApiUrlOverride;
     private readonly string _proxyProtocol;
     private readonly TimeSpan _readyTimeout;
@@ -154,11 +153,6 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
         _s3Bucket = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_BUCKET") ?? "daytona";
         _s3Region = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_REGION") ?? "us-east-1";
         _dexConfigPath = Path.Combine(Path.GetTempPath(), $"sharpclaw-dex-{Guid.NewGuid():N}.yaml");
-        _runnerEnvFilePath = Path.Combine(Path.GetTempPath(), $"sharpclaw-daytona-runner-{Guid.NewGuid():N}.env");
-
-        // Debug: Log the .env file path and ensure it exists before any container is built
-        Console.Error.WriteLine($"[Daytona] .env file path: {_runnerEnvFilePath}");
-        Console.Error.WriteLine($"[Daytona] .env file exists before creation: {File.Exists(_runnerEnvFilePath)}");
 
         _proxyProtocol = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_PROXY_PROTOCOL") ?? "http";
         _proxyApiUrlOverride = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_PROXY_API_URL");
@@ -189,35 +183,9 @@ staticPasswords:
     userID: 8a7a3e11-5c0d-4fa5-9a29-9382e9bcd7f8
 ");
 
-        // Create .env file for Daytona runner to prevent "open .env: no such file or directory" error
-        // The runner loads configuration from environment variables, but the entrypoint expects a .env file
-        var envContent = @"# Daytona runner environment file
-# All configuration is passed via environment variables
-# This file is required by the runner entrypoint script
-RUNNER_ENV_FILE_MOUNTED=true
-";
-        File.WriteAllText(_runnerEnvFilePath, envContent);
-
-        // Ensure file is readable by all users (container may run as different user)
-        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-        {
-            try
-            {
-                System.Diagnostics.Process.Start("chmod", $"644 {_runnerEnvFilePath}").WaitForExit();
-                Console.Error.WriteLine("[Daytona] Set .env file permissions to 644");
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Daytona] Warning: Could not set file permissions: {ex.Message}");
-            }
-        }
-
-        // Verify file was created
-        var fileInfo = new FileInfo(_runnerEnvFilePath);
-        Console.Error.WriteLine($"[Daytona] .env file exists after creation: {File.Exists(_runnerEnvFilePath)}");
-        Console.Error.WriteLine($"[Daytona] .env file full path: {fileInfo.FullName}");
-        Console.Error.WriteLine($"[Daytona] .env file length: {fileInfo.Length} bytes");
-        Console.Error.WriteLine($"[Daytona] .env file is absolute path: {Path.IsPathFullyQualified(_runnerEnvFilePath)}");
+        // Configuration is passed entirely via environment variables to the runner container
+        // The .env file mounting approach was unreliable in some environments
+        Console.Error.WriteLine("[Daytona] Configuration will be passed via environment variables");
 
         _network = new NetworkBuilder()
             .WithName($"sharpclaw-daytona-{Guid.NewGuid():N}")
@@ -582,18 +550,6 @@ RUNNER_ENV_FILE_MOUNTED=true
         catch (Exception ex)
         {
             errors.Add(new InvalidOperationException("Failed to delete Dex config file.", ex));
-        }
-
-        try
-        {
-            if (File.Exists(_runnerEnvFilePath))
-            {
-                File.Delete(_runnerEnvFilePath);
-            }
-        }
-        catch (Exception ex)
-        {
-            errors.Add(new InvalidOperationException("Failed to delete runner env file.", ex));
         }
 
         if (errors.Count > 0)
@@ -986,47 +942,12 @@ RUNNER_ENV_FILE_MOUNTED=true
 
         Console.Error.WriteLine($"[Daytona] Runner API_URL will be set to: {apiBaseUrl}");
 
-        // Debug: Verify .env file exists before mounting
-        var envFileExists = File.Exists(_runnerEnvFilePath);
-        Console.Error.WriteLine($"[Daytona] BuildRunnerContainerWithDind - .env file path: {_runnerEnvFilePath}");
-        Console.Error.WriteLine($"[Daytona] BuildRunnerContainerWithDind - .env file exists: {envFileExists}");
-
-        if (!envFileExists)
-        {
-            Console.Error.WriteLine("[Daytona] ERROR: .env file does not exist! Attempting to recreate...");
-            var envContent = @"# Daytona runner environment file
-RUNNER_ENV_FILE_MOUNTED=true
-";
-            File.WriteAllText(_runnerEnvFilePath, envContent);
-            Console.Error.WriteLine($"[Daytona] Recreated .env file, exists now: {File.Exists(_runnerEnvFilePath)}");
-        }
-
-        // Verify absolute path (required for bind mounts)
-        var fullPath = Path.GetFullPath(_runnerEnvFilePath);
-        Console.Error.WriteLine($"[Daytona] BuildRunnerContainerWithDind - .env absolute path: {fullPath}");
-        Console.Error.WriteLine($"[Daytona] Host .env exists: {File.Exists(_runnerEnvFilePath)}");
-        Console.Error.WriteLine($"[Daytona] Host .env path: {Path.GetFullPath(_runnerEnvFilePath)}");
-        
-        // Additional file diagnostics
-        try
-        {
-            var fileInfo = new FileInfo(_runnerEnvFilePath);
-            Console.Error.WriteLine($"[Daytona] Host .env length: {fileInfo.Length} bytes");
-            Console.Error.WriteLine($"[Daytona] Host .env last write: {fileInfo.LastWriteTime}");
-            Console.Error.WriteLine($"[Daytona] Host .env readable: {fileInfo.Exists}");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[Daytona] Error getting file info: {ex.Message}");
-        }
-
+        // Configuration is passed entirely via environment variables
+        // The .env file mounting approach was unreliable, so we pass all config as env vars
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
-            // Use ResourceMapping to copy .env file into container - more reliable than bind mounts
-            // The runner looks for .env in its working directory (relative path)
             .WithWorkingDirectory("/")
-            .WithResourceMapping(fullPath, "/")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
