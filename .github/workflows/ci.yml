@@ -6,116 +6,11 @@ on:
   pull_request:
     branches: ['**']
   workflow_dispatch:
-    inputs:
-      test_tier:
-        description: 'Test tier to run'
-        required: true
-        default: 'fast'
-        type: choice
-        options:
-          - fast
-          - integration
-          - all
-  schedule:
-    # Run full test suite daily at 02:00 UTC
-    - cron: '0 2 * * *'
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln', '**/global.json') }}
-          restore-keys: ${{ runner.os }}-nuget-
-
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --no-restore --configuration Release
-
-      - name: Pack artifacts
-        run: dotnet pack --no-build --configuration Release --output ./artifacts
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: |
-            artifacts/**
-          retention-days: 1
-
-  test-fast:
-    name: Fast Tests
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln', '**/global.json') }}
-          restore-keys: ${{ runner.os }}-nuget-
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          path: ./artifacts
-
-      - name: Run fast tests
-        # Runs on: PRs, pushes to main/develop, workflow_dispatch (fast/all), scheduled runs
-        if: |
-          github.event_name == 'pull_request' ||
-          github.event_name == 'push' ||
-          github.event_name == 'schedule' ||
-          inputs.test_tier == 'fast' ||
-          inputs.test_tier == 'all'
-        run: |
-          mkdir -p TestResults
-          dotnet test --configuration Release \
-            --logger "trx;LogFileName=fast-tests.trx" \
-            --results-directory TestResults \
-            --filter "Category!=ExternalInfrastructure&Category!=SlowIntegration&Category!=ContainerizedMock&FullyQualifiedName!~DaytonaIntegration&FullyQualifiedName!~Kubernetes" \
-            --blame-hang-timeout 5m \
-            --blame-crash
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fast-test-results
-          path: TestResults/**
-          retention-days: 7
-
-  test-integration:
-    name: Integration Tests
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     
     steps:
       - name: Checkout
@@ -144,31 +39,26 @@ jobs:
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln', '**/global.json') }}
           restore-keys: ${{ runner.os }}-nuget-
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          path: ./artifacts
+      - name: Restore
+        run: dotnet restore
 
-      - name: Run integration tests (Daytona + Kubernetes)
-        # Runs on: scheduled runs, workflow_dispatch (integration/all), NOT on PR/push
-        if: |
-          github.event_name == 'schedule' ||
-          inputs.test_tier == 'integration' ||
-          inputs.test_tier == 'all'
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run ALL tests
         run: |
           mkdir -p TestResults
           dotnet test --configuration Release \
-            --logger "trx;LogFileName=integration-tests.trx" \
+            --logger "trx;LogFileName=test-results.trx" \
             --results-directory TestResults \
-            --filter "FullyQualifiedName~DaytonaIntegration|FullyQualifiedName~Kubernetes" \
-            --timeout 60m
+            --blame-hang-timeout 10m \
+            --blame-crash
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-test-results
+          name: test-results
           path: TestResults/**
           retention-days: 7
 
@@ -176,11 +66,11 @@ jobs:
         if: always()
         run: |
           echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
-          if [ -f TestResults/integration-tests.trx ]; then
-            total=$(grep -o 'outcome="Passed"\|outcome="Failed"\|outcome="Skipped"' TestResults/integration-tests.trx | wc -l)
-            passed=$(grep -o 'outcome="Passed"' TestResults/integration-tests.trx | wc -l)
-            failed=$(grep -o 'outcome="Failed"' TestResults/integration-tests.trx | wc -l)
-            skipped=$(grep -o 'outcome="Skipped"' TestResults/integration-tests.trx | wc -l)
+          if [ -f TestResults/test-results.trx ]; then
+            total=$(grep -o 'outcome="Passed"\|outcome="Failed"\|outcome="Skipped"' TestResults/test-results.trx | wc -l)
+            passed=$(grep -o 'outcome="Passed"' TestResults/test-results.trx | wc -l)
+            failed=$(grep -o 'outcome="Failed"' TestResults/test-results.trx | wc -l)
+            skipped=$(grep -o 'outcome="Skipped"' TestResults/test-results.trx | wc -l)
             echo "- **Total:** $total" >> $GITHUB_STEP_SUMMARY
             echo "- **Passed:** $passed" >> $GITHUB_STEP_SUMMARY
             echo "- **Failed:** $failed" >> $GITHUB_STEP_SUMMARY
