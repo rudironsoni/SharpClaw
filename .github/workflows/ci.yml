@@ -11,8 +11,6 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 150
-    env:
-      SKIP_DAYTONA_INTEGRATION: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
