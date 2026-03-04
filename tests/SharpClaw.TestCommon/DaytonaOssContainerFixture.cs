@@ -484,6 +484,11 @@ staticPasswords:
                 Console.Error.WriteLine($"[Daytona] WARNING: Failed to verify API health before starting runner: {ex.Message}");
             }
 
+            // Debug API connectivity before starting runner
+            // This helps diagnose "undefined response type" errors
+            Console.Error.WriteLine("[Daytona] Debugging API connectivity before starting runner...");
+            await DebugApiConnectivityAsync();
+
             // Start Daytona runner (connects to DinD for workspace creation)
             // Runner queries API for config during startup, so API must be ready
             Console.Error.WriteLine("[Daytona] Starting runner...");
@@ -734,8 +739,15 @@ staticPasswords:
         try
         {
             Console.Error.WriteLine("[Daytona] ==================== PROXY CONTAINER LOGS ====================");
-            var logs = await _daytonaProxy.GetLogsAsync();
-            Console.Error.WriteLine(logs);
+            var (proxyStdout, proxyStderr) = await _daytonaProxy.GetLogsAsync();
+            Console.Error.WriteLine("[Daytona] Proxy stdout:");
+            Console.Error.WriteLine(proxyStdout);
+            if (!string.IsNullOrWhiteSpace(proxyStderr))
+            {
+                Console.Error.WriteLine("[Daytona] Proxy stderr:");
+                Console.Error.WriteLine(proxyStderr);
+            }
+
             Console.Error.WriteLine("[Daytona] ==================== END PROXY LOGS ====================");
         }
         catch (Exception ex)
@@ -768,13 +780,31 @@ staticPasswords:
             try
             {
                 Console.Error.WriteLine("[Daytona] ==================== RUNNER EXITED - CAPTURING LOGS ====================");
-                var logs = await _daytonaRunner.GetLogsAsync();
-                Console.Error.WriteLine(logs);
+                var (runnerStdout, runnerStderr) = await _daytonaRunner.GetLogsAsync();
+                Console.Error.WriteLine("[Daytona] Runner stdout:");
+                Console.Error.WriteLine(runnerStdout);
+                if (!string.IsNullOrWhiteSpace(runnerStderr))
+                {
+                    Console.Error.WriteLine("[Daytona] Runner stderr:");
+                    Console.Error.WriteLine(runnerStderr);
+                }
+
                 Console.Error.WriteLine("[Daytona] ==================== END RUNNER LOGS ====================");
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[Daytona] Failed to retrieve runner logs: {ex.Message}");
+            }
+
+            // Run additional diagnostics
+            try
+            {
+                Console.Error.WriteLine("[Daytona] Running connectivity diagnostics after runner exit...");
+                await DebugApiConnectivityAsync();
+            }
+            catch (Exception debugEx)
+            {
+                Console.Error.WriteLine($"[Daytona] Debug connectivity failed: {debugEx.Message}");
             }
 
             throw new InvalidOperationException("Runner container exited unexpectedly during startup. Check logs above for 'undefined response type' error.");
@@ -845,8 +875,15 @@ staticPasswords:
         try
         {
             Console.Error.WriteLine("[Daytona] ==================== RUNNER CONTAINER LOGS ====================");
-            var logs = await _daytonaRunner.GetLogsAsync();
-            Console.Error.WriteLine(logs);
+            var (runnerStdout, runnerStderr) = await _daytonaRunner.GetLogsAsync();
+            Console.Error.WriteLine("[Daytona] Runner stdout:");
+            Console.Error.WriteLine(runnerStdout);
+            if (!string.IsNullOrWhiteSpace(runnerStderr))
+            {
+                Console.Error.WriteLine("[Daytona] Runner stderr:");
+                Console.Error.WriteLine(runnerStderr);
+            }
+
             Console.Error.WriteLine("[Daytona] ==================== END RUNNER LOGS ====================");
         }
         catch (Exception ex)
@@ -858,13 +895,31 @@ staticPasswords:
         try
         {
             Console.Error.WriteLine("[Daytona] ==================== API CONTAINER LOGS ====================");
-            var apiLogs = await _daytonaApi.GetLogsAsync();
-            Console.Error.WriteLine(apiLogs);
+            var (apiStdout, apiStderr) = await _daytonaApi.GetLogsAsync();
+            Console.Error.WriteLine("[Daytona] API stdout:");
+            Console.Error.WriteLine(apiStdout);
+            if (!string.IsNullOrWhiteSpace(apiStderr))
+            {
+                Console.Error.WriteLine("[Daytona] API stderr:");
+                Console.Error.WriteLine(apiStderr);
+            }
+
             Console.Error.WriteLine("[Daytona] ==================== END API LOGS ====================");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Daytona] Failed to retrieve API logs: {ex.Message}");
+        }
+
+        // Run additional connectivity diagnostics
+        try
+        {
+            Console.Error.WriteLine("[Daytona] Running additional connectivity diagnostics...");
+            await DebugApiConnectivityAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] Debug connectivity failed: {ex.Message}");
         }
 
         throw new TimeoutException(
@@ -1118,32 +1173,46 @@ DOCKER_HOST=tcp://daytona-dind:2375
             {
                 // Try the /api/config endpoint first (most likely for runner)
                 using var response = await client.GetAsync(configUri);
+                var content = await response.Content.ReadAsStringAsync();
+                Console.Error.WriteLine($"[Daytona] API /api/config response: Status={response.StatusCode}, Body={content[..Math.Min(200, content.Length)]}");
+
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    Console.Error.WriteLine($"[Daytona] API /api/config returned: {content[..Math.Min(100, content.Length)]}...");
+                    Console.Error.WriteLine($"[Daytona] API /api/config returned OK");
                     return;
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[Daytona] API /api/config returned non-OK status: {response.StatusCode}");
                 }
             }
             catch (Exception ex)
             {
                 lastError = ex;
+                Console.Error.WriteLine($"[Daytona] API /api/config request failed: {ex.Message}");
             }
 
             try
             {
                 // Fallback to /config endpoint
                 using var response = await client.GetAsync(fallbackConfigUri);
+                var content = await response.Content.ReadAsStringAsync();
+                Console.Error.WriteLine($"[Daytona] API /config response: Status={response.StatusCode}, Body={content[..Math.Min(200, content.Length)]}");
+
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    Console.Error.WriteLine($"[Daytona] API /config returned: {content[..Math.Min(100, content.Length)]}...");
+                    Console.Error.WriteLine($"[Daytona] API /config returned OK");
                     return;
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[Daytona] API /config returned non-OK status: {response.StatusCode}");
                 }
             }
             catch (Exception ex)
             {
                 lastError = ex;
+                Console.Error.WriteLine($"[Daytona] API /config request failed: {ex.Message}");
             }
 
             await Task.Delay(_readyPollInterval);
@@ -1152,6 +1221,126 @@ DOCKER_HOST=tcp://daytona-dind:2375
         throw new TimeoutException(
             $"Daytona API /api/config (or /config) endpoint failed to become ready within {_readyTimeout}.",
             lastError);
+    }
+
+    /// <summary>
+    /// Debug method to test API connectivity from within the Docker network.
+    /// This helps diagnose network issues between runner and API containers.
+    /// </summary>
+    private async Task DebugApiConnectivityAsync()
+    {
+        Console.Error.WriteLine("[Daytona] ==================== DEBUG API CONNECTIVITY ====================");
+
+        // Test 1: Check internal API connectivity from test host perspective
+        Console.Error.WriteLine("[Daytona] Test 1: External API connectivity (via mapped port)");
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var externalUrl = $"{ServerUrl}/api/config";
+            Console.Error.WriteLine($"[Daytona] Testing external URL: {externalUrl}");
+            var response = await client.GetAsync(externalUrl);
+            var content = await response.Content.ReadAsStringAsync();
+            Console.Error.WriteLine($"[Daytona] External API response: Status={response.StatusCode}, Body={content[..Math.Min(300, content.Length)]}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] External API connectivity failed: {ex.Message}");
+        }
+
+        // Test 2: Start a debug container to test internal connectivity
+        Console.Error.WriteLine("[Daytona] Test 2: Internal API connectivity (via Docker network)");
+        try
+        {
+            var debugContainer = new ContainerBuilder("curlimages/curl:latest")
+                .WithNetwork(_network)
+                .WithCommand("curl", "-v", "-s", "--max-time", "10", "http://daytona-api:3000/api/config")
+                .Build();
+
+            await debugContainer.StartAsync();
+            Console.Error.WriteLine("[Daytona] Debug curl container started");
+
+            // Wait for container to complete
+            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                if (debugContainer.State == DotNet.Testcontainers.Containers.TestcontainersStates.Exited)
+                {
+                    break;
+                }
+
+                await Task.Delay(100);
+            }
+
+            try
+            {
+                var (stdout, stderr) = await debugContainer.GetLogsAsync();
+                Console.Error.WriteLine("[Daytona] Debug curl container stdout:");
+                Console.Error.WriteLine(stdout);
+                Console.Error.WriteLine("[Daytona] Debug curl container stderr:");
+                Console.Error.WriteLine(stderr);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Daytona] Failed to get debug container logs: {ex.Message}");
+            }
+
+            await debugContainer.StopAsync();
+            await debugContainer.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] Internal API connectivity test failed: {ex.Message}");
+        }
+
+        // Test 3: Try accessing without /api prefix
+        Console.Error.WriteLine("[Daytona] Test 3: Testing /config endpoint (without /api prefix)");
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var response = await client.GetAsync($"{ServerUrl}/config");
+            var content = await response.Content.ReadAsStringAsync();
+            Console.Error.WriteLine($"[Daytona] /config response: Status={response.StatusCode}, Body={content[..Math.Min(300, content.Length)]}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] /config endpoint test failed: {ex.Message}");
+        }
+
+        // Test 4: Check API container state and logs
+        Console.Error.WriteLine("[Daytona] Test 4: API container diagnostics");
+        try
+        {
+            Console.Error.WriteLine($"[Daytona] API container state: {_daytonaApi.State}");
+            Console.Error.WriteLine($"[Daytona] API container mapped port: {_daytonaApi.GetMappedPublicPort(_apiPort)}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] Failed to get API container info: {ex.Message}");
+        }
+
+        // Try to get recent API logs
+        try
+        {
+            Console.Error.WriteLine("[Daytona] Recent API container logs:");
+            var (stdout, stderr) = await _daytonaApi.GetLogsAsync();
+            // Get last 50 lines from stdout
+            var logLines = stdout.Split('\n');
+            var recentLogs = string.Join('\n', logLines.TakeLast(50));
+            Console.Error.WriteLine(recentLogs);
+            if (!string.IsNullOrWhiteSpace(stderr))
+            {
+                Console.Error.WriteLine("[Daytona] API container stderr:");
+                var stderrLines = stderr.Split('\n');
+                var recentStderr = string.Join('\n', stderrLines.TakeLast(20));
+                Console.Error.WriteLine(recentStderr);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] Failed to get API logs: {ex.Message}");
+        }
+
+        Console.Error.WriteLine("[Daytona] ==================== END DEBUG API CONNECTIVITY ====================");
     }
 
     private async Task EnsureDependenciesReadyAsync()
