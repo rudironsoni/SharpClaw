@@ -501,10 +501,6 @@ RUNNER_ENV_FILE_MOUNTED=true
                 Console.Error.WriteLine($"[Daytona] WARNING: Failed to verify API health before starting runner: {ex.Message}");
             }
 
-            // Debug: Run a diagnostic container to understand the environment
-            Console.Error.WriteLine("[Daytona] Running debug container to inspect environment...");
-            await RunDebugContainerAsync();
-
             // Start Daytona runner (connects to DinD for workspace creation)
             // Runner queries API for config during startup, so API must be ready
             Console.Error.WriteLine("[Daytona] Starting runner...");
@@ -1027,17 +1023,9 @@ RUNNER_ENV_FILE_MOUNTED=true
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
-            // Mount .env file to multiple locations to ensure it's found
+            // Use ResourceMapping to copy .env file into container - more reliable than bind mounts
             // The runner looks for .env in its working directory (relative path)
-            // We try multiple common home directories since the user may vary
             .WithWorkingDirectory("/")
-            // Try mounting to /root/.env (if container runs as root)
-            .WithBindMount(fullPath, "/root/.env")
-            // Try mounting to /home/daytona/.env (if daytona user exists)
-            .WithBindMount(fullPath, "/home/daytona/.env")
-            // Also mount to /.env for good measure
-            .WithBindMount(fullPath, "/.env")
-            // Alternative: Use ResourceMapping to copy file into container at build time
             .WithResourceMapping(fullPath, "/")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
@@ -1091,98 +1079,6 @@ RUNNER_ENV_FILE_MOUNTED=true
             // The runner container starts but may not log "runner" in all versions
             // Actual readiness is verified in EnsureRunnerReadyAsync after startup
             .Build();
-    }
-
-    /// <summary>
-    /// Runs a debug container to inspect the environment before starting the runner.
-    /// Helps diagnose why .env file isn't being found.
-    /// </summary>
-    private async Task RunDebugContainerAsync()
-    {
-        try
-        {
-            var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
-            var fullPath = Path.GetFullPath(_runnerEnvFilePath);
-            
-            Console.Error.WriteLine("[Daytona Debug] ===============================================");
-            Console.Error.WriteLine("[Daytona Debug] Starting environment debug container...");
-            Console.Error.WriteLine($"[Daytona Debug] Image: {runnerImage}");
-            Console.Error.WriteLine($"[Daytona Debug] Host .env path: {fullPath}");
-            Console.Error.WriteLine($"[Daytona Debug] Host .env exists: {File.Exists(_runnerEnvFilePath)}");
-            
-            // Debug container to understand the environment
-            var debugScript = @"
-echo '=== Daytona Debug Environment ==='
-echo 'User: '$(whoami)
-echo 'UID: '$(id -u)
-echo 'GID: '$(id -g)
-echo 'PWD: '$(pwd)
-echo 'Home: '$HOME
-echo ''
-echo '=== .env file checks ==='
-ls -la /.env /root/.env /home/daytona/.env 2>&1 || true
-echo ''
-echo '=== All .env files in container ==='
-find / -name '.env' -type f 2>/dev/null
-echo ''
-echo '=== Environment variables referencing .env ==='
-env | grep -i '\.env' || true
-echo ''
-echo '=== Directory listings ==='
-ls -la / 2>&1 | head -20
-echo ''
-ls -la /root/ 2>&1 || true
-echo ''
-ls -la /home/ 2>&1 || true
-echo '=== End Debug ==='
-";
-
-            var debugContainer = new ContainerBuilder(runnerImage)
-                .WithNetwork(_network)
-                .WithBindMount(fullPath, "/root/.env")
-                .WithBindMount(fullPath, "/home/daytona/.env")
-                .WithBindMount(fullPath, "/.env")
-                .WithCommand("sh", "-c", debugScript)
-                .Build();
-                
-            await debugContainer.StartAsync();
-            
-            // Wait a moment for command to execute
-            await Task.Delay(TimeSpan.FromSeconds(2));
-            
-            var logs = await debugContainer.GetLogsAsync();
-            Console.Error.WriteLine("[Daytona Debug] ==================== DEBUG CONTAINER LOGS ====================");
-            if (!string.IsNullOrEmpty(logs.Stdout))
-            {
-                Console.Error.WriteLine(logs.Stdout);
-            }
-
-            if (!string.IsNullOrEmpty(logs.Stderr))
-            {
-                Console.Error.WriteLine("[Daytona Debug] STDERR:");
-                Console.Error.WriteLine(logs.Stderr);
-            }
-
-            Console.Error.WriteLine("[Daytona Debug] ==================== END DEBUG LOGS ====================");
-            
-            try
-            {
-                await debugContainer.StopAsync();
-                await debugContainer.DisposeAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Daytona Debug] Warning: Error stopping debug container: {ex.Message}");
-            }
-            
-            Console.Error.WriteLine("[Daytona Debug] ===============================================");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[Daytona Debug] ERROR: Failed to run debug container: {ex.Message}");
-            Console.Error.WriteLine($"[Daytona Debug] Stack: {ex.StackTrace}");
-            // Don't throw - this is just debugging
-        }
     }
 
     private async Task DeleteNetworkAsync(List<Exception> errors)
