@@ -25,9 +25,9 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private const int RegistryPort = 5000;
     private const int DexPort = 5556;
     private const string DefaultApiHealthPath = "/api/health";
-    private static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan DefaultReadyPollInterval = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan DefaultReadyRequestTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan DefaultReadyPollInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultReadyRequestTimeout = TimeSpan.FromSeconds(15);
 
     private const string DefaultApiImage = "daytonaio/daytona-api:v0.148.0";
     private const string DefaultProxyImage = "daytonaio/daytona-proxy:v0.148.0";
@@ -205,6 +205,9 @@ staticPasswords:
             .WithEnvironment("NODE_ENV", "development")
             .WithEnvironment("ENCRYPTION_KEY", _encryptionKey)
             .WithEnvironment("ENCRYPTION_SALT", _encryptionSalt)
+            .WithEnvironment("JWT_SECRET", _encryptionKey)
+            .WithEnvironment("API_TOKEN_SECRET", _encryptionKey)
+            .WithEnvironment("SESSION_SECRET", _encryptionSalt)
             .WithEnvironment("DB_HOST", "daytona-postgres")
             .WithEnvironment("DB_PORT", PostgresPort.ToString())
             .WithEnvironment("DB_USERNAME", _dbUser)
@@ -233,7 +236,9 @@ staticPasswords:
             .WithEnvironment("SSH_GATEWAY_URL", sshGatewayUrl)
             .WithEnvironment("OIDC_ISSUER_BASE_URL", $"http://daytona-dex:{DexPort}/dex")
             .WithEnvironment("OIDC_CLIENT_ID", "daytona")
+            .WithEnvironment("OIDC_CLIENT_SECRET", "daytona-secret")
             .WithEnvironment("OIDC_AUDIENCE", "daytona")
+            .WithEnvironment("OIDC_REDIRECT_URI", $"http://daytona-proxy:{DefaultProxyPort}/callback")
             .WithEnvironment("APP_URL", proxyUrl)
             .WithEnvironment("DASHBOARD_BASE_API_URL", proxyUrl)
             .WithEnvironment("DASHBOARD_URL", proxyUrl)
@@ -267,6 +272,10 @@ staticPasswords:
             .WithEnvironment("API_KEY_USER_CACHE_TTL_SECONDS", "60")
             .WithEnvironment("MAINTENANCE_MODE", "false")
             .WithEnvironment("OTEL_ENABLED", "false")
+            .WithEnvironment("LOG_LEVEL", "debug")
+            .WithEnvironment("DEBUG", "true")
+            .WithEnvironment("DISABLE_TELEMETRY", "true")
+            .WithEnvironment("WEBHOOK_SECRET", ApiKey)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(request => request
                     .ForPort((ushort)_apiPort)
