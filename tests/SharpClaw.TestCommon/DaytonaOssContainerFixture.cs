@@ -981,10 +981,11 @@ DOCKER_HOST=tcp://daytona-dind:2375
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
-            // Mount the entire directory containing .env to /daytona in container
-            // Bind mounting directories is more reliable than mounting single files
-            .WithWorkingDirectory("/daytona")
-            .WithBindMount(_runnerEnvDir, "/daytona")
+            // Mount the entire directory containing .env to root (/) in container
+            // Daytona looks for .env in the current working directory (relative path)
+            // By mounting to root and setting working directory to /, ./.env resolves correctly
+            .WithWorkingDirectory("/")
+            .WithBindMount(_runnerEnvDir, "/")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
