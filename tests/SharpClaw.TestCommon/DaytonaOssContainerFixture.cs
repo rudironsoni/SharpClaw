@@ -491,7 +491,7 @@ COPY .env /config/.env
 
         // Build custom image with .env baked in
         var imageBuilder = new ImageFromDockerfileBuilder()
-            .WithDockerfile(dockerfilePath)
+            .WithDockerfileDirectory(_runnerEnvDir)
             .WithBuildArgument("DOCKER_BUILDKIT", "1");
 
         _runnerCustomImage = imageBuilder.Build();
