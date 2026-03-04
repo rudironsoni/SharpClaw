@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
+using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
 using Xunit;
 
@@ -48,6 +49,7 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private readonly IContainer _dind;
     private readonly IContainer _daytonaRunner;
     private IContainer _daytonaProxy;
+    private DotNet.Testcontainers.Images.IImage? _runnerCustomImage;
     private readonly int _apiPort;
     private readonly string _healthPath;
     private readonly string _encryptionKey;
@@ -363,6 +365,19 @@ staticPasswords:
         await StopAndDisposeAsync(_redis, "Redis", errors);
         await StopAndDisposeAsync(_postgres, "Postgres", errors);
 
+        // Dispose custom runner image
+        if (_runnerCustomImage is IAsyncDisposable asyncDisposableImage)
+        {
+            try
+            {
+                await asyncDisposableImage.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new InvalidOperationException("Failed to dispose custom runner image.", ex));
+            }
+        }
+
         if (_networkCreated)
         {
             try
@@ -464,11 +479,26 @@ staticPasswords:
 
         File.WriteAllText(Path.Combine(_runnerEnvDir, ".env"), envContent);
 
-        return new ContainerBuilder(runnerImage)
+        // Create custom Dockerfile with baked-in .env file
+        var dockerfileContent = $@"FROM {runnerImage}
+WORKDIR /config
+COPY .env /config/.env
+";
+
+        var dockerfilePath = Path.Combine(_runnerEnvDir, "Dockerfile");
+        File.WriteAllText(dockerfilePath, dockerfileContent);
+
+        // Build custom image with .env baked in
+        var imageBuilder = new ImageFromDockerfileBuilder()
+            .WithDockerfile(dockerfilePath)
+            .WithBuildArgument("DOCKER_BUILDKIT", "1");
+
+        _runnerCustomImage = imageBuilder.Build();
+
+        return new ContainerBuilder(_runnerCustomImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
             .WithWorkingDirectory("/config")
-            .WithBindMount(_runnerEnvDir, "/config")
             .WithPortBinding(DefaultRunnerPort, true)
             .WithEnvironment("DOCKER_HOST", "tcp://daytona-dind:2375")
             .WithEnvironment("API_URL", apiUrl)
