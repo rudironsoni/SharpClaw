@@ -804,6 +804,8 @@ staticPasswords:
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
+            // Expose runner port for API communication
+            .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
             // This prevents container escape vulnerabilities from Docker socket access
             .WithEnvironment("DOCKER_HOST", "tcp://daytona-dind:2375")
