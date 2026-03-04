@@ -277,11 +277,7 @@ staticPasswords:
             .WithEnvironment("DISABLE_TELEMETRY", "true")
             .WithEnvironment("WEBHOOK_SECRET", ApiKey)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(request => request
-                    .ForPort((ushort)_apiPort)
-                    .ForPath(_healthPath)
-                    .WithMethod(HttpMethod.Get)
-                    .ForStatusCode(HttpStatusCode.OK)))
+                .UntilCommandIsCompleted($"sh -c 'until nc -z localhost {_apiPort} 2>/dev/null; do sleep 1; done'"))
             .Build();
 
         _dind = BuildDindContainer();
@@ -314,7 +310,6 @@ staticPasswords:
             await _daytonaApi.StartAsync();
 
             ServerUrl = $"http://127.0.0.1:{_daytonaApi.GetMappedPublicPort(_apiPort)}";
-            await EnsureApiReadyAsync();
 
             _daytonaRunner = await BuildRunnerContainerAsync();
             await _daytonaRunner.StartAsync();
@@ -550,34 +545,6 @@ COPY .env /config/.env
                     .WithMethod(HttpMethod.Get)
                     .ForStatusCode(HttpStatusCode.OK)))
             .Build();
-    }
-
-    private async Task EnsureApiReadyAsync()
-    {
-        var healthUri = new Uri(new Uri(ServerUrl), _healthPath);
-        using var client = new HttpClient { Timeout = _readyRequestTimeout };
-        var deadline = DateTimeOffset.UtcNow + _readyTimeout;
-        Exception? lastError = null;
-
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            try
-            {
-                using var response = await client.GetAsync(healthUri);
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                lastError = ex;
-            }
-
-            await Task.Delay(_readyPollInterval);
-        }
-
-        throw new TimeoutException($"Daytona API not ready at {healthUri} within {_readyTimeout}.", lastError);
     }
 
     private async Task EnsureRunnerReadyAsync()
