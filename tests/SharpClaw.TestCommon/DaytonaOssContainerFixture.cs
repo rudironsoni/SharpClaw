@@ -82,6 +82,7 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private readonly string _s3Bucket;
     private readonly string _s3Region;
     private readonly string _dexConfigPath;
+    private readonly string _runnerEnvFilePath;
     private readonly string? _proxyApiUrlOverride;
     private readonly string _proxyProtocol;
     private readonly TimeSpan _readyTimeout;
@@ -153,6 +154,7 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
         _s3Bucket = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_BUCKET") ?? "daytona";
         _s3Region = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_REGION") ?? "us-east-1";
         _dexConfigPath = Path.Combine(Path.GetTempPath(), $"sharpclaw-dex-{Guid.NewGuid():N}.yaml");
+        _runnerEnvFilePath = Path.Combine(Path.GetTempPath(), $"sharpclaw-daytona-runner-{Guid.NewGuid():N}.env");
         _proxyProtocol = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_PROXY_PROTOCOL") ?? "http";
         _proxyApiUrlOverride = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_PROXY_API_URL");
         _readyTimeout = GetDurationFromEnvironment("SHARPCLAW_DAYTONA_READY_TIMEOUT", DefaultReadyTimeout);
@@ -181,6 +183,10 @@ staticPasswords:
     username: admin
     userID: 8a7a3e11-5c0d-4fa5-9a29-9382e9bcd7f8
 ");
+
+        // Create empty .env file for Daytona runner to prevent "open .env: no such file or directory" error
+        // The runner loads configuration from environment variables, but the entrypoint expects a .env file
+        File.WriteAllText(_runnerEnvFilePath, "# Daytona runner environment file\n# All configuration is passed via environment variables\n");
 
         _network = new NetworkBuilder()
             .WithName($"sharpclaw-daytona-{Guid.NewGuid():N}")
@@ -545,6 +551,18 @@ staticPasswords:
         catch (Exception ex)
         {
             errors.Add(new InvalidOperationException("Failed to delete Dex config file.", ex));
+        }
+
+        try
+        {
+            if (File.Exists(_runnerEnvFilePath))
+            {
+                File.Delete(_runnerEnvFilePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add(new InvalidOperationException("Failed to delete runner env file.", ex));
         }
 
         if (errors.Count > 0)
@@ -940,6 +958,8 @@ staticPasswords:
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
+            // Mount .env file to prevent "open .env: no such file or directory" error
+            .WithBindMount(_runnerEnvFilePath, "/.env")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
