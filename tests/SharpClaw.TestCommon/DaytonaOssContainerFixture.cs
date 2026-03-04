@@ -749,6 +749,9 @@ staticPasswords:
     {
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
 
+        // Ensure /api suffix is included for proper API endpoint routing
+        var apiUrlWithSuffix = GetProxyApiUrl(apiExternalUrl);
+
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
@@ -758,9 +761,9 @@ staticPasswords:
             .WithEnvironment("ENCRYPTION_SALT", _encryptionSalt)
             .WithEnvironment("DEFAULT_RUNNER_PORT", DefaultRunnerPort.ToString())
             .WithEnvironment("DEFAULT_RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
-            .WithEnvironment("DEFAULT_RUNNER_API_URL", apiExternalUrl)
-            .WithEnvironment("DAYTONA_API_URL", apiExternalUrl)
-            .WithEnvironment("SERVER_URL", $"http://daytona-api:{DefaultApiPort}")
+            .WithEnvironment("DEFAULT_RUNNER_API_URL", apiUrlWithSuffix)
+            .WithEnvironment("DAYTONA_API_URL", apiUrlWithSuffix)
+            .WithEnvironment("SERVER_URL", apiUrlWithSuffix)
             .WithEnvironment("DAYTONA_RUNNER_TOKEN", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
             // Runner readiness verified via port check after startup
@@ -845,7 +848,8 @@ staticPasswords:
             .WithEnvironment("RUNNER_PORT", DefaultRunnerPort.ToString())
             .WithEnvironment("RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
             // API connection configuration
-            .WithEnvironment("API_URL", GetApiInternalBaseUrl())
+            // Use GetProxyApiUrl to ensure /api suffix is included for proper API endpoint routing
+            .WithEnvironment("API_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
             .WithEnvironment("API_KEY", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
             // Legacy/default runner environment variables
@@ -853,9 +857,9 @@ staticPasswords:
             .WithEnvironment("ENCRYPTION_SALT", _encryptionSalt)
             .WithEnvironment("DEFAULT_RUNNER_PORT", DefaultRunnerPort.ToString())
             .WithEnvironment("DEFAULT_RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
-            .WithEnvironment("DEFAULT_RUNNER_API_URL", GetApiInternalBaseUrl())
-            .WithEnvironment("DAYTONA_API_URL", GetApiInternalBaseUrl())
-            .WithEnvironment("SERVER_URL", $"http://daytona-api:{DefaultApiPort}")
+            .WithEnvironment("DEFAULT_RUNNER_API_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
+            .WithEnvironment("DAYTONA_API_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
+            .WithEnvironment("SERVER_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
             .WithEnvironment("DAYTONA_RUNNER_TOKEN", ApiKey)
             // Runner quotas and limits
             .WithEnvironment("RUNNER_CPU", "4")
