@@ -20,10 +20,7 @@ public sealed class DummyAgentRuntimeAdapter : IAgentRuntimeAdapter
         // Publish events to simulate agent activity
         if (request.OnEvent is not null)
         {
-            await request.OnEvent("agent.step_start", "Dummy adapter initialized").ConfigureAwait(false);
-            await request.OnEvent("agent.step_complete", "Processing...").ConfigureAwait(false);
-            await request.OnEvent("agent.text_delta", "This is a dummy response. No AI client is configured.").ConfigureAwait(false);
-            await request.OnEvent("agent.completed", "Dummy execution complete").ConfigureAwait(false);
+            await request.OnEvent("run.delta", "This is a dummy response. No AI client is configured.").ConfigureAwait(false);
         }
 
         // Simulate some async work

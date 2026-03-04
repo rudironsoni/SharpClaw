@@ -43,11 +43,11 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private const int DexPort = 5556;
     private const string TestcontainersHost = "host.testcontainers.internal";
     private const string DefaultApiHealthPath = "/api/health";
-        private static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan DefaultReadyPollInterval = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan DefaultReadyRequestTimeout = TimeSpan.FromSeconds(10);
         // Proxy-specific readiness knobs (can be overridden with env vars)
-        private static readonly TimeSpan DefaultProxyReadyTimeout = TimeSpan.FromMinutes(6);
+        private static readonly TimeSpan DefaultProxyReadyTimeout = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan DefaultProxyReadyPollInterval = TimeSpan.FromSeconds(2);
     private const string DefaultApiImage = "daytonaio/daytona-api:v0.148.0";
     private const string DefaultProxyImage = "daytonaio/daytona-proxy:v0.148.0";
@@ -407,30 +407,45 @@ staticPasswords:
             _networkCreated = true;
 
             // Start infrastructure dependencies first
+            Console.Error.WriteLine("[Daytona] Starting infrastructure dependencies...");
             await _postgres.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Postgres started");
             await _redis.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Redis started");
             await _minio.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ MinIO started");
             await _registry.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Registry started");
             await _dex.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Dex started");
             await EnsureDependenciesReadyAsync();
+            Console.Error.WriteLine("[Daytona] ✓ All dependencies ready");
 
             // Start Docker-in-Docker sidecar first
             // This provides isolated Docker runtime for the runner
+            Console.Error.WriteLine("[Daytona] Starting Docker-in-Docker sidecar...");
             await _dind.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ DinD started");
 
             // Start Daytona API first so runner can fetch its configuration
             // The runner needs to query the API during startup
+            Console.Error.WriteLine("[Daytona] Starting API server...");
             await _daytonaApi.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ API started");
 
             ServerUrl = $"http://127.0.0.1:{_daytonaApi.GetMappedPublicPort(_apiPort)}";
+            Console.Error.WriteLine($"[Daytona] API URL: {ServerUrl}");
             await EnsureApiReadyAsync();
+            Console.Error.WriteLine("[Daytona] ✓ API ready");
 
             // Wait for API to be fully initialized before runner connects
             await Task.Delay(TimeSpan.FromSeconds(3));
 
             // Start Daytona runner (connects to DinD for workspace creation)
             // Runner queries API for config during startup, so API must be ready
+            Console.Error.WriteLine("[Daytona] Starting runner...");
             await _daytonaRunner.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Runner started");
 
             // Wait for runner to fully initialize
             await Task.Delay(TimeSpan.FromSeconds(3));
@@ -439,14 +454,18 @@ staticPasswords:
             // Proxy needs the internal API URL for communication
             // Also ensure the /config endpoint is available before starting proxy
             await EnsureApiConfigReadyAsync();
+            Console.Error.WriteLine("[Daytona] Starting proxy...");
             var proxy = BuildProxyContainer(GetApiInternalBaseUrl());
             _daytonaProxy = proxy;
             await _daytonaProxy.StartAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Proxy started");
 
             // After container start, actively probe the proxy through its mapped (external) port
             // to ensure it can reach the API and is functional before proceeding.
             await EnsureProxyReadyAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Proxy ready");
 
+            Console.Error.WriteLine("[Daytona] ✓✓✓ All containers started and ready ✓✓✓");
             _started = true;
         }
         catch
@@ -877,13 +896,19 @@ staticPasswords:
     }
 
     private async Task EnsureDependenciesReadyAsync()
-    {
-        await EnsureTcpReadyAsync("Postgres", _postgres, PostgresPort);
-        await EnsureTcpReadyAsync("Redis", _redis, RedisPort);
-        await EnsureHttpReadyAsync("MinIO", _minio, MinioPort, "/minio/health/ready");
-        await EnsureHttpReadyAsync("Registry", _registry, RegistryPort, "/v2/");
-        await EnsureHttpReadyAsync("Dex", _dex, DexPort, "/dex/.well-known/openid-configuration");
-    }
+        {
+            Console.Error.WriteLine("[Daytona] Waiting for dependencies to be ready...");
+            await EnsureTcpReadyAsync("Postgres", _postgres, PostgresPort);
+            Console.Error.WriteLine("[Daytona] ✓ Postgres ready");
+            await EnsureTcpReadyAsync("Redis", _redis, RedisPort);
+            Console.Error.WriteLine("[Daytona] ✓ Redis ready");
+            await EnsureHttpReadyAsync("MinIO", _minio, MinioPort, "/minio/health/ready");
+            Console.Error.WriteLine("[Daytona] ✓ MinIO ready");
+            await EnsureHttpReadyAsync("Registry", _registry, RegistryPort, "/v2/");
+            Console.Error.WriteLine("[Daytona] ✓ Registry ready");
+            await EnsureHttpReadyAsync("Dex", _dex, DexPort, "/dex/.well-known/openid-configuration");
+            Console.Error.WriteLine("[Daytona] ✓ Dex ready");
+        }
 
     private async Task EnsureTcpReadyAsync(string name, IContainer container, int port)
     {

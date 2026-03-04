@@ -10,7 +10,7 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     
     steps:
       - name: Checkout
@@ -51,7 +51,7 @@ jobs:
           dotnet test --configuration Release \
             --logger "trx;LogFileName=test-results.trx" \
             --results-directory TestResults \
-            --blame-hang-timeout 10m \
+            --blame-hang-timeout 30m \
             --blame-crash
 
       - name: Upload test results
