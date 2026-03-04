@@ -7,7 +7,7 @@ using Xunit;
 namespace SharpClaw.Execution.Daytona.IntegrationTests;
 
 [Trait("Category", "ExternalInfrastructure")]
-public class DaytonaProviderIntegrationTests : IAsyncLifetime, IClassFixture<DaytonaOssContainerFixture>
+public class DaytonaProviderIntegrationTests : IClassFixture<DaytonaOssContainerFixture>
 {
     private readonly DaytonaOssContainerFixture _fixture;
     private SandboxManagerService? _manager;
@@ -44,13 +44,6 @@ public class DaytonaProviderIntegrationTests : IAsyncLifetime, IClassFixture<Day
             throw;
         }
     }
-
-    public async Task InitializeAsync()
-    {
-        await EnsureManagerAsync();
-    }
-
-    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact(Skip = "Daytona container .env file issue - see GitHub issue")]
     [Trait("Category", "ExternalInfrastructure")]
