@@ -82,6 +82,7 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private readonly string _s3Bucket;
     private readonly string _s3Region;
     private readonly string _dexConfigPath;
+    private readonly string _runnerEnvDir;
     private readonly string? _proxyApiUrlOverride;
     private readonly string _proxyProtocol;
     private readonly TimeSpan _readyTimeout;
@@ -183,9 +184,11 @@ staticPasswords:
     userID: 8a7a3e11-5c0d-4fa5-9a29-9382e9bcd7f8
 ");
 
-        // Configuration is passed entirely via environment variables to the runner container
-        // The .env file mounting approach was unreliable in some environments
-        Console.Error.WriteLine("[Daytona] Configuration will be passed via environment variables");
+        // Create temporary directory for runner .env file
+        // Mounting directories is more reliable than mounting single files
+        _runnerEnvDir = Path.Combine(Path.GetTempPath(), $"sharpclaw-daytona-env-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_runnerEnvDir);
+        Console.Error.WriteLine($"[Daytona] Created runner env directory: {_runnerEnvDir}");
 
         _network = new NetworkBuilder()
             .WithName($"sharpclaw-daytona-{Guid.NewGuid():N}")
@@ -550,6 +553,18 @@ staticPasswords:
         catch (Exception ex)
         {
             errors.Add(new InvalidOperationException("Failed to delete Dex config file.", ex));
+        }
+
+        try
+        {
+            if (Directory.Exists(_runnerEnvDir))
+            {
+                Directory.Delete(_runnerEnvDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add(new InvalidOperationException("Failed to delete runner env directory.", ex));
         }
 
         if (errors.Count > 0)
@@ -942,47 +957,34 @@ staticPasswords:
         var apiUrlWithSuffix = GetProxyApiUrl(apiBaseUrl); // Returns http://daytona-api:3000/api
 
         Console.Error.WriteLine($"[Daytona] Runner API_URL will be set to: {apiBaseUrl}");
-        Console.Error.WriteLine($"[Daytona] Creating .env file with API_URL={apiBaseUrl}");
+        Console.Error.WriteLine($"[Daytona] Creating .env file in {_runnerEnvDir} with API_URL={apiBaseUrl}");
 
         // Daytona runner REQUIRES a .env file to exist with specific variables.
-        // We create it via custom entrypoint since file mounting was unreliable.
-        // The command creates .env in both root AND working directory, then starts daytona.
-        // We use WithEntrypoint instead of WithCommand to ensure it runs before the default CMD.
-        var entrypointCommand =
-            $"echo '[Daytona] Creating .env files...' && " +
-            $"pwd && " + // Debug: show current working directory
-            $"echo 'API_URL={apiBaseUrl}' > /.env && " +
-            $"echo 'API_URL={apiBaseUrl}' > $(pwd)/.env && " + // Also create in cwd
-            $"echo 'DAYTONA_API_URL={apiBaseUrl}' >> /.env && " +
-            $"echo 'DAYTONA_API_URL={apiBaseUrl}' >> $(pwd)/.env && " +
-            $"echo 'SERVER_URL={apiBaseUrl}' >> /.env && " +
-            $"echo 'SERVER_URL={apiBaseUrl}' >> $(pwd)/.env && " +
-            $"echo 'DEFAULT_RUNNER_API_URL={apiBaseUrl}' >> /.env && " +
-            $"echo 'DEFAULT_RUNNER_API_URL={apiBaseUrl}' >> $(pwd)/.env && " +
-            $"echo 'API_KEY={ApiKey}' >> /.env && " +
-            $"echo 'API_KEY={ApiKey}' >> $(pwd)/.env && " +
-            $"echo 'API_TOKEN={ApiKey}' >> /.env && " +
-            $"echo 'API_TOKEN={ApiKey}' >> $(pwd)/.env && " +
-            $"echo 'DAYTONA_RUNNER_TOKEN={ApiKey}' >> /.env && " +
-            $"echo 'DAYTONA_RUNNER_TOKEN={ApiKey}' >> $(pwd)/.env && " +
-            $"echo 'RUNNER_NAME=default' >> /.env && " +
-            $"echo 'RUNNER_NAME=default' >> $(pwd)/.env && " +
-            $"echo 'RUNNER_ID=default-runner' >> /.env && " +
-            $"echo 'RUNNER_ID=default-runner' >> $(pwd)/.env && " +
-            $"echo 'RUNNER_PORT={DefaultRunnerPort}' >> /.env && " +
-            $"echo 'RUNNER_PORT={DefaultRunnerPort}' >> $(pwd)/.env && " +
-            $"echo 'RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}' >> /.env && " +
-            $"echo 'RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}' >> $(pwd)/.env && " +
-            $"echo 'DOCKER_HOST=tcp://daytona-dind:2375' >> /.env && " +
-            $"echo 'DOCKER_HOST=tcp://daytona-dind:2375' >> $(pwd)/.env && " +
-            $"ls -la /.env $(pwd)/.env 2>&1 || true && " + // Debug: verify files exist
-            $"cat /.env && " + // Debug: show what we created
-            "exec daytona serve"; // Start the actual service
+        // We create the .env file in a temporary directory on the host, then mount
+        // the entire directory to the container's working directory. This is more
+        // reliable than mounting single files which can have synchronization issues.
+        var envFilePath = Path.Combine(_runnerEnvDir, ".env");
+        File.WriteAllText(envFilePath, $@"API_URL={apiBaseUrl}
+DAYTONA_API_URL={apiBaseUrl}
+SERVER_URL={apiBaseUrl}
+DEFAULT_RUNNER_API_URL={apiBaseUrl}
+API_KEY={ApiKey}
+API_TOKEN={ApiKey}
+DAYTONA_RUNNER_TOKEN={ApiKey}
+RUNNER_NAME=default
+RUNNER_ID=default-runner
+RUNNER_PORT={DefaultRunnerPort}
+RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}
+DOCKER_HOST=tcp://daytona-dind:2375
+");
 
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
-            .WithWorkingDirectory("/")
+            // Mount the entire directory containing .env to /daytona in container
+            // Bind mounting directories is more reliable than mounting single files
+            .WithWorkingDirectory("/daytona")
+            .WithBindMount(_runnerEnvDir, "/daytona")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
@@ -992,8 +994,6 @@ staticPasswords:
             .WithEnvironment("API_URL", apiBaseUrl)
             .WithEnvironment("API_KEY", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
-            // Use custom entrypoint to create .env file before starting Daytona
-            .WithEntrypoint("sh", "-c", entrypointCommand)
             // Security hardening via Docker API
             .WithCreateParameterModifier(cmd =>
             {
