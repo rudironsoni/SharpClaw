@@ -489,6 +489,12 @@ staticPasswords:
             Console.Error.WriteLine("[Daytona] Debugging API connectivity before starting runner...");
             await DebugApiConnectivityAsync();
 
+            // Verify API is truly ready before starting runner
+            // This ensures the API returns valid JSON, not HTML error pages
+            Console.Error.WriteLine("[Daytona] Verifying API returns valid JSON before starting runner...");
+            await VerifyApiRespondsWithValidJsonAsync();
+            Console.Error.WriteLine("[Daytona] ✓ API responds with valid JSON");
+
             // Start Daytona runner (connects to DinD for workspace creation)
             // Runner queries API for config during startup, so API must be ready
             Console.Error.WriteLine("[Daytona] Starting runner...");
@@ -1347,6 +1353,117 @@ DOCKER_HOST=tcp://daytona-dind:2375
         }
 
         Console.Error.WriteLine("[Daytona] ==================== END DEBUG API CONNECTIVITY ====================");
+    }
+
+    /// <summary>
+    /// Verifies that the API is truly ready by checking it returns valid JSON from /api/config.
+    /// This runs a temporary curl container within the Docker network to ensure the API
+    /// is fully initialized and responding with proper JSON, not HTML error pages.
+    /// </summary>
+    private async Task VerifyApiRespondsWithValidJsonAsync()
+    {
+        Console.Error.WriteLine("[Daytona] ==================== VERIFY API JSON RESPONSE ====================");
+
+        // Build shell script line by line to avoid escaping issues
+        var scriptLines = new[]
+        {
+            "for i in 1 2 3 4 5 6 7 8 9 10; do",
+            "    response=$(curl -s -w '\\n%{http_code}' --max-time 10 http://daytona-api:3000/api/config 2>&1)",
+            "    http_code=$(echo \"$response\" | tail -n1)",
+            "    body=$(echo \"$response\" | sed '$d')",
+            "    echo \"[Attempt $i] HTTP $http_code\"",
+            "",
+            "    if [ \"$http_code\" = \"200\" ]; then",
+            "        if echo \"$body\" | grep -q 'apiKey'; then",
+            "            echo \"VALID_JSON_WITH_API_KEY\"",
+            "            exit 0",
+            "        fi",
+            "        if echo \"$body\" | grep -qE '^[[:space:]]*[\\{\\[]'; then",
+            "            echo \"VALID_JSON\"",
+            "            exit 0",
+            "        fi",
+            "        echo \"NOT_JSON: $body\"",
+            "    elif [ \"$http_code\" = \"401\" ] || [ \"$http_code\" = \"403\" ]; then",
+            "        echo \"AUTH_REQUIRED: HTTP $http_code\"",
+            "    else",
+            "        echo \"HTTP_ERROR: $http_code\"",
+            "    fi",
+            "",
+            "    sleep 3",
+            "done",
+            "echo \"TIMEOUT\"",
+            "exit 1"
+        };
+        var verificationScript = string.Join("\n", scriptLines);
+
+        var testApiContainer = new ContainerBuilder("curlimages/curl:latest")
+            .WithNetwork(_network)
+            .WithCommand("sh", "-c", verificationScript)
+            .Build();
+
+        try
+        {
+            await testApiContainer.StartAsync();
+            Console.Error.WriteLine("[Daytona] API verification container started");
+
+            // Wait for container to complete with timeout
+            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(2);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                if (testApiContainer.State == DotNet.Testcontainers.Containers.TestcontainersStates.Exited)
+                {
+                    break;
+                }
+
+                await Task.Delay(500);
+            }
+
+            // Get the logs
+            var (stdout, stderr) = await testApiContainer.GetLogsAsync();
+
+            // Output all logs
+            Console.Error.WriteLine("[Daytona] API Verification logs:");
+            foreach (var line in stdout.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)))
+            {
+                Console.Error.WriteLine($"[Daytona]   {line}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(stderr))
+            {
+                Console.Error.WriteLine("[Daytona] API Verification stderr:");
+                foreach (var line in stderr.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)))
+                {
+                    Console.Error.WriteLine($"[Daytona]   {line}");
+                }
+            }
+
+            // Check if verification succeeded
+            if (stdout.Contains("VALID_JSON"))
+            {
+                Console.Error.WriteLine("[Daytona] ✓ API verification passed");
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "API is not returning valid JSON. The runner requires valid JSON from /api/config. " +
+                    "This usually means the API is not fully initialized or is returning an HTML error page. " +
+                    "Check the logs above for details.");
+            }
+        }
+        finally
+        {
+            try
+            {
+                await testApiContainer.StopAsync();
+                await testApiContainer.DisposeAsync();
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+
+        Console.Error.WriteLine("[Daytona] ==================== END VERIFY API JSON RESPONSE ====================");
     }
 
     private async Task EnsureDependenciesReadyAsync()
