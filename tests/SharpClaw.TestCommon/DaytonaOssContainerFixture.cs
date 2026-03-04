@@ -155,6 +155,11 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
         _s3Region = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_S3_REGION") ?? "us-east-1";
         _dexConfigPath = Path.Combine(Path.GetTempPath(), $"sharpclaw-dex-{Guid.NewGuid():N}.yaml");
         _runnerEnvFilePath = Path.Combine(Path.GetTempPath(), $"sharpclaw-daytona-runner-{Guid.NewGuid():N}.env");
+
+        // Debug: Log the .env file path and ensure it exists before any container is built
+        Console.Error.WriteLine($"[Daytona] .env file path: {_runnerEnvFilePath}");
+        Console.Error.WriteLine($"[Daytona] .env file exists before creation: {File.Exists(_runnerEnvFilePath)}");
+
         _proxyProtocol = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_PROXY_PROTOCOL") ?? "http";
         _proxyApiUrlOverride = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_PROXY_API_URL");
         _readyTimeout = GetDurationFromEnvironment("SHARPCLAW_DAYTONA_READY_TIMEOUT", DefaultReadyTimeout);
@@ -184,9 +189,35 @@ staticPasswords:
     userID: 8a7a3e11-5c0d-4fa5-9a29-9382e9bcd7f8
 ");
 
-        // Create empty .env file for Daytona runner to prevent "open .env: no such file or directory" error
+        // Create .env file for Daytona runner to prevent "open .env: no such file or directory" error
         // The runner loads configuration from environment variables, but the entrypoint expects a .env file
-        File.WriteAllText(_runnerEnvFilePath, "# Daytona runner environment file\n# All configuration is passed via environment variables\n");
+        var envContent = @"# Daytona runner environment file
+# All configuration is passed via environment variables
+# This file is required by the runner entrypoint script
+RUNNER_ENV_FILE_MOUNTED=true
+";
+        File.WriteAllText(_runnerEnvFilePath, envContent);
+
+        // Ensure file is readable by all users (container may run as different user)
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                System.Diagnostics.Process.Start("chmod", $"644 {_runnerEnvFilePath}").WaitForExit();
+                Console.Error.WriteLine("[Daytona] Set .env file permissions to 644");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Daytona] Warning: Could not set file permissions: {ex.Message}");
+            }
+        }
+
+        // Verify file was created
+        var fileInfo = new FileInfo(_runnerEnvFilePath);
+        Console.Error.WriteLine($"[Daytona] .env file exists after creation: {File.Exists(_runnerEnvFilePath)}");
+        Console.Error.WriteLine($"[Daytona] .env file full path: {fileInfo.FullName}");
+        Console.Error.WriteLine($"[Daytona] .env file length: {fileInfo.Length} bytes");
+        Console.Error.WriteLine($"[Daytona] .env file is absolute path: {Path.IsPathFullyQualified(_runnerEnvFilePath)}");
 
         _network = new NetworkBuilder()
             .WithName($"sharpclaw-daytona-{Guid.NewGuid():N}")
@@ -955,13 +986,34 @@ staticPasswords:
 
         Console.Error.WriteLine($"[Daytona] Runner API_URL will be set to: {apiBaseUrl}");
 
+        // Debug: Verify .env file exists before mounting
+        var envFileExists = File.Exists(_runnerEnvFilePath);
+        Console.Error.WriteLine($"[Daytona] BuildRunnerContainerWithDind - .env file path: {_runnerEnvFilePath}");
+        Console.Error.WriteLine($"[Daytona] BuildRunnerContainerWithDind - .env file exists: {envFileExists}");
+
+        if (!envFileExists)
+        {
+            Console.Error.WriteLine("[Daytona] ERROR: .env file does not exist! Attempting to recreate...");
+            var envContent = @"# Daytona runner environment file
+RUNNER_ENV_FILE_MOUNTED=true
+";
+            File.WriteAllText(_runnerEnvFilePath, envContent);
+            Console.Error.WriteLine($"[Daytona] Recreated .env file, exists now: {File.Exists(_runnerEnvFilePath)}");
+        }
+
+        // Verify absolute path (required for bind mounts)
+        var fullPath = Path.GetFullPath(_runnerEnvFilePath);
+        Console.Error.WriteLine($"[Daytona] BuildRunnerContainerWithDind - .env absolute path: {fullPath}");
+
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
             // Mount .env file to prevent "open .env: no such file or directory" error
             // The runner expects .env in its working directory - mount to root and set working dir
             .WithWorkingDirectory("/")
-            .WithBindMount(_runnerEnvFilePath, "/.env")
+            // Use ResourceMapping instead of BindMount for better file handling
+            // This copies the file content into the container rather than bind mounting
+            .WithResourceMapping(new FileInfo(fullPath), "/.env")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
