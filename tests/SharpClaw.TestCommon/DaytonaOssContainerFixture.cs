@@ -47,9 +47,9 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private readonly IContainer _dex;
     private readonly IContainer _daytonaApi;
     private readonly IContainer _dind;
-    private readonly IContainer _daytonaRunner;
+    private IContainer _daytonaRunner;
     private IContainer _daytonaProxy;
-    private DotNet.Testcontainers.Images.IImage? _runnerCustomImage;
+    private DotNet.Testcontainers.Images.IFutureDockerImage? _runnerCustomImage;
     private readonly int _apiPort;
     private readonly string _healthPath;
     private readonly string _encryptionKey;
@@ -276,7 +276,7 @@ staticPasswords:
             .Build();
 
         _dind = BuildDindContainer();
-        _daytonaRunner = BuildRunnerContainer();
+        _daytonaRunner = null!;
         _daytonaProxy = null!;
     }
 
@@ -307,6 +307,7 @@ staticPasswords:
             ServerUrl = $"http://127.0.0.1:{_daytonaApi.GetMappedPublicPort(_apiPort)}";
             await EnsureApiReadyAsync();
 
+            _daytonaRunner = await BuildRunnerContainerAsync();
             await _daytonaRunner.StartAsync();
             await EnsureRunnerReadyAsync();
 
@@ -459,7 +460,7 @@ staticPasswords:
             .Build();
     }
 
-    private IContainer BuildRunnerContainer()
+    private async Task<IContainer> BuildRunnerContainerAsync()
     {
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
         var apiUrl = $"http://daytona-api:{_apiPort}/api";
@@ -494,6 +495,7 @@ COPY .env /config/.env
             .WithBuildArgument("DOCKER_BUILDKIT", "1");
 
         _runnerCustomImage = imageBuilder.Build();
+        await _runnerCustomImage.CreateAsync();
 
         return new ContainerBuilder(_runnerCustomImage)
             .WithNetwork(_network)
