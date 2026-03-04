@@ -1172,13 +1172,15 @@ DOCKER_HOST=tcp://daytona-dind:2375
             try
             {
                 // Try the /api/config endpoint first (most likely for runner)
+                Console.Error.WriteLine($"[Daytona] Attempting to reach /api/config at: {configUri}");
                 using var response = await client.GetAsync(configUri);
                 var content = await response.Content.ReadAsStringAsync();
-                Console.Error.WriteLine($"[Daytona] API /api/config response: Status={response.StatusCode}, Body={content[..Math.Min(200, content.Length)]}");
+                var contentType = response.Content.Headers.ContentType?.ToString() ?? "unknown";
+                Console.Error.WriteLine($"[Daytona] API /api/config response: Status={response.StatusCode}, Content-Type={contentType}, Body={content[..Math.Min(500, content.Length)]}");
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    Console.Error.WriteLine($"[Daytona] API /api/config returned OK");
+                    Console.Error.WriteLine($"[Daytona] API /api/config returned OK (length: {content.Length} chars)");
                     return;
                 }
                 else
@@ -1195,13 +1197,15 @@ DOCKER_HOST=tcp://daytona-dind:2375
             try
             {
                 // Fallback to /config endpoint
+                Console.Error.WriteLine($"[Daytona] Attempting fallback to /config at: {fallbackConfigUri}");
                 using var response = await client.GetAsync(fallbackConfigUri);
                 var content = await response.Content.ReadAsStringAsync();
-                Console.Error.WriteLine($"[Daytona] API /config response: Status={response.StatusCode}, Body={content[..Math.Min(200, content.Length)]}");
+                var contentType = response.Content.Headers.ContentType?.ToString() ?? "unknown";
+                Console.Error.WriteLine($"[Daytona] API /config response: Status={response.StatusCode}, Content-Type={contentType}, Body={content[..Math.Min(500, content.Length)]}");
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    Console.Error.WriteLine($"[Daytona] API /config returned OK");
+                    Console.Error.WriteLine($"[Daytona] API /config returned OK (length: {content.Length} chars)");
                     return;
                 }
                 else
@@ -1240,7 +1244,8 @@ DOCKER_HOST=tcp://daytona-dind:2375
             Console.Error.WriteLine($"[Daytona] Testing external URL: {externalUrl}");
             var response = await client.GetAsync(externalUrl);
             var content = await response.Content.ReadAsStringAsync();
-            Console.Error.WriteLine($"[Daytona] External API response: Status={response.StatusCode}, Body={content[..Math.Min(300, content.Length)]}");
+            var contentType = response.Content.Headers.ContentType?.ToString() ?? "unknown";
+            Console.Error.WriteLine($"[Daytona] External API response: Status={response.StatusCode}, Content-Type={contentType}, Body={content[..Math.Min(500, content.Length)]}");
         }
         catch (Exception ex)
         {
@@ -1299,7 +1304,8 @@ DOCKER_HOST=tcp://daytona-dind:2375
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             var response = await client.GetAsync($"{ServerUrl}/config");
             var content = await response.Content.ReadAsStringAsync();
-            Console.Error.WriteLine($"[Daytona] /config response: Status={response.StatusCode}, Body={content[..Math.Min(300, content.Length)]}");
+            var contentType = response.Content.Headers.ContentType?.ToString() ?? "unknown";
+            Console.Error.WriteLine($"[Daytona] /config response: Status={response.StatusCode}, Content-Type={contentType}, Body={content[..Math.Min(500, content.Length)]}");
         }
         catch (Exception ex)
         {
