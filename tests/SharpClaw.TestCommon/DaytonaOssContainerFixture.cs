@@ -939,11 +939,30 @@ staticPasswords:
         // It expects the base API URL WITHOUT the /api suffix.
         // The runner will append its own paths like /config, /api/..., etc.
         var apiBaseUrl = GetApiInternalBaseUrl(); // Returns http://daytona-api:3000 (no /api suffix)
+        var apiUrlWithSuffix = GetProxyApiUrl(apiBaseUrl); // Returns http://daytona-api:3000/api
 
         Console.Error.WriteLine($"[Daytona] Runner API_URL will be set to: {apiBaseUrl}");
+        Console.Error.WriteLine($"[Daytona] Creating .env file with API_URL={apiBaseUrl}");
 
-        // Configuration is passed entirely via environment variables
-        // The .env file mounting approach was unreliable, so we pass all config as env vars
+        // Daytona runner REQUIRES a .env file to exist with specific variables.
+        // We create it via custom entrypoint since file mounting was unreliable.
+        // The command creates /.env and then starts the daytona service.
+        var entrypointCommand =
+            $"echo 'API_URL={apiBaseUrl}' > /.env && " +
+            $"echo 'DAYTONA_API_URL={apiBaseUrl}' >> /.env && " +
+            $"echo 'SERVER_URL={apiBaseUrl}' >> /.env && " +
+            $"echo 'DEFAULT_RUNNER_API_URL={apiBaseUrl}' >> /.env && " +
+            $"echo 'API_KEY={ApiKey}' >> /.env && " +
+            $"echo 'API_TOKEN={ApiKey}' >> /.env && " +
+            $"echo 'DAYTONA_RUNNER_TOKEN={ApiKey}' >> /.env && " +
+            $"echo 'RUNNER_NAME=default' >> /.env && " +
+            $"echo 'RUNNER_ID=default-runner' >> /.env && " +
+            $"echo 'RUNNER_PORT={DefaultRunnerPort}' >> /.env && " +
+            $"echo 'RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}' >> /.env && " +
+            $"echo 'DOCKER_HOST=tcp://daytona-dind:2375' >> /.env && " +
+            $"cat /.env && " + // Debug: show what we created
+            "exec daytona serve"; // Start the actual service
+
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
@@ -953,36 +972,12 @@ staticPasswords:
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
             // This prevents container escape vulnerabilities from Docker socket access
             .WithEnvironment("DOCKER_HOST", "tcp://daytona-dind:2375")
-            // Runner identification and registration
-            .WithEnvironment("RUNNER_NAME", "default")
-            .WithEnvironment("RUNNER_ID", "default-runner")
-            .WithEnvironment("RUNNER_PORT", DefaultRunnerPort.ToString())
-            .WithEnvironment("RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
-            // API connection configuration
-            // CRITICAL: Use base URL without /api suffix - runner constructs its own paths
+            // API connection configuration - also passed as env vars for redundancy
             .WithEnvironment("API_URL", apiBaseUrl)
             .WithEnvironment("API_KEY", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
-            // Legacy/default runner environment variables
-            .WithEnvironment("ENCRYPTION_KEY", _encryptionKey)
-            .WithEnvironment("ENCRYPTION_SALT", _encryptionSalt)
-            .WithEnvironment("DEFAULT_RUNNER_PORT", DefaultRunnerPort.ToString())
-            .WithEnvironment("DEFAULT_RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
-            // Use base URL without /api suffix for all API URLs
-            .WithEnvironment("DEFAULT_RUNNER_API_URL", apiBaseUrl)
-            .WithEnvironment("DAYTONA_API_URL", apiBaseUrl)
-            .WithEnvironment("SERVER_URL", apiBaseUrl)
-            .WithEnvironment("DAYTONA_RUNNER_TOKEN", ApiKey)
-            // Runner quotas and limits
-            .WithEnvironment("RUNNER_CPU", "4")
-            .WithEnvironment("RUNNER_MEMORY", "8")
-            .WithEnvironment("RUNNER_DISK", "50")
-            .WithEnvironment("DEFAULT_RUNNER_CPU", "4")
-            .WithEnvironment("DEFAULT_RUNNER_MEMORY", "8")
-            .WithEnvironment("DEFAULT_RUNNER_DISK", "50")
-            // Disable GPU for tests
-            .WithEnvironment("RUNNER_GPU", "0")
-            .WithEnvironment("DEFAULT_RUNNER_GPU", "0")
+            // Use custom entrypoint to create .env file before starting Daytona
+            .WithCommand("sh", "-c", entrypointCommand)
             // Security hardening via Docker API
             .WithCreateParameterModifier(cmd =>
             {
