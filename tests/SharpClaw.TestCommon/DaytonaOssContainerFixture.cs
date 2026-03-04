@@ -678,12 +678,34 @@ staticPasswords:
         // The runner should be able to connect to the API and Docker daemon
         // We'll verify by checking that it's listening on its port
         var host = _daytonaRunner.Hostname;
-        var mappedPort = _daytonaRunner.GetMappedPublicPort(DefaultRunnerPort);
+
+        // Log container state for diagnostics
+        Console.Error.WriteLine($"[Daytona] Runner container state: {_daytonaRunner.State}");
+
+        // Verify port is exposed before attempting to get mapped port
+        int mappedPort;
+        try
+        {
+            mappedPort = _daytonaRunner.GetMappedPublicPort(DefaultRunnerPort);
+            Console.Error.WriteLine($"[Daytona] Runner port {DefaultRunnerPort} mapped to host port {mappedPort}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] ERROR: Failed to get mapped public port for {DefaultRunnerPort}. " +
+                $"Ensure .WithPortBinding({DefaultRunnerPort}, true) is called when building the container.");
+            Console.Error.WriteLine($"[Daytona] Container state: {_daytonaRunner.State}");
+            throw new InvalidOperationException(
+                $"Runner container port {DefaultRunnerPort} is not exposed. " +
+                "Ensure WithPortBinding is configured in the container builder.", ex);
+        }
+
         var deadline = DateTimeOffset.UtcNow + _readyTimeout;
         Exception? lastError = null;
+        var attemptCount = 0;
 
         while (DateTimeOffset.UtcNow < deadline)
         {
+            attemptCount++;
             try
             {
                 // Try to connect to the runner port
@@ -691,27 +713,33 @@ staticPasswords:
                 await client.ConnectAsync(host, mappedPort).WaitAsync(_readyRequestTimeout);
                 if (client.Connected)
                 {
+                    Console.Error.WriteLine($"[Daytona] Runner ready after {attemptCount} attempt(s)");
                     return;
                 }
             }
             catch (Exception ex)
             {
                 lastError = ex;
+                if (attemptCount <= 3 || attemptCount % 10 == 0)
+                {
+                    Console.Error.WriteLine($"[Daytona] Runner readiness check #{attemptCount} failed: {ex.Message}");
+                }
             }
 
             await Task.Delay(_readyPollInterval);
         }
 
         // If we reach here, the runner never became ready. Capture container logs for diagnostics.
+        Console.Error.WriteLine($"[Daytona] Runner failed to become ready after {attemptCount} attempts over {_readyTimeout}.");
         try
         {
-            Console.Error.WriteLine("Daytona runner failed to become ready. Capturing container logs for diagnostics:");
+            Console.Error.WriteLine("[Daytona] Capturing container logs for diagnostics:");
             var logs = await _daytonaRunner.GetLogsAsync();
             Console.Error.WriteLine(logs);
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to retrieve Daytona runner logs: {ex.Message}");
+            Console.Error.WriteLine($"[Daytona] Failed to retrieve runner logs: {ex.Message}");
         }
 
         throw new TimeoutException($"Daytona runner failed to become ready at {host}:{mappedPort} within {_readyTimeout}.", lastError);
@@ -724,6 +752,8 @@ staticPasswords:
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
+            // Expose runner port for health check verification
+            .WithPortBinding(DefaultRunnerPort, true)
             .WithEnvironment("ENCRYPTION_KEY", _encryptionKey)
             .WithEnvironment("ENCRYPTION_SALT", _encryptionSalt)
             .WithEnvironment("DEFAULT_RUNNER_PORT", DefaultRunnerPort.ToString())
