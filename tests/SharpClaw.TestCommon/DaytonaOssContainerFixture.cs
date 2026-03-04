@@ -441,6 +441,29 @@ staticPasswords:
             // Wait for API to be fully initialized before runner connects
             await Task.Delay(TimeSpan.FromSeconds(3));
 
+            // Verify API is still healthy before starting runner
+            Console.Error.WriteLine("[Daytona] Verifying API health before starting runner...");
+            try
+            {
+                using var client = new HttpClient { Timeout = _readyRequestTimeout };
+                var healthCheck = await client.GetAsync(new Uri(new Uri(ServerUrl), _healthPath));
+                Console.Error.WriteLine($"[Daytona] API health check before runner start: {healthCheck.StatusCode}");
+
+                // Also check the /config endpoint that the runner needs
+                var configCheck = await client.GetAsync(new Uri(new Uri(ServerUrl), "/config"));
+                Console.Error.WriteLine($"[Daytona] API /config check before runner start: {configCheck.StatusCode}");
+
+                if (configCheck.StatusCode != HttpStatusCode.OK)
+                {
+                    var configBody = await configCheck.Content.ReadAsStringAsync();
+                    Console.Error.WriteLine($"[Daytona] WARNING: API /config returned non-OK status. Body: {configBody[..Math.Min(200, configBody.Length)]}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Daytona] WARNING: Failed to verify API health before starting runner: {ex.Message}");
+            }
+
             // Start Daytona runner (connects to DinD for workspace creation)
             // Runner queries API for config during startup, so API must be ready
             Console.Error.WriteLine("[Daytona] Starting runner...");
@@ -596,6 +619,9 @@ staticPasswords:
     {
         var proxyImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_PROXY_IMAGE") ?? DefaultProxyImage;
 
+        Console.Error.WriteLine($"[Daytona] Building proxy container with API URL: {apiInternalUrl}");
+        Console.Error.WriteLine($"[Daytona] Proxy PROXY_API_URL will be: {GetProxyApiUrl(apiInternalUrl)}");
+
         return new ContainerBuilder(proxyImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-proxy")
@@ -609,9 +635,13 @@ staticPasswords:
             .WithEnvironment("PROXY_API_KEY", ApiKey)
             .WithEnvironment("PROXY_PROTOCOL", _proxyProtocol)
             .WithEnvironment("DAYTONA_API_URL", apiInternalUrl)
+            // Use HTTP-based wait strategy instead of netcat - more reliable
             .WithWaitStrategy(Wait.ForUnixContainer()
-                // Keep a lightweight command check but do not rely on it solely for readiness.
-                .UntilCommandIsCompleted($"/bin/sh -c 'sleep 1; nc -z localhost {DefaultProxyPort} || exit 1'"))
+                .UntilHttpRequestIsSucceeded(request => request
+                    .ForPort((ushort)DefaultProxyPort)
+                    .ForPath("/health")
+                    .WithMethod(HttpMethod.Get)
+                    .ForStatusCode(HttpStatusCode.OK)))
             .Build();
     }
 
@@ -624,10 +654,9 @@ staticPasswords:
 
     private async Task EnsureProxyReadyAsync()
     {
-        // Probe the proxy by requesting the API health endpoint through the proxy.
-        // Many Daytona proxy configurations will forward /api/* to the internal API service.
+        // Probe the proxy by requesting the proxy's own health endpoint first
         var proxyBase = GetProxyExternalBaseUrl();
-        var probePath = "/api/health"; // probe the proxied API health
+        var probePath = "/health"; // proxy's own health endpoint
         using var client = new HttpClient
         {
             Timeout = _readyRequestTimeout
@@ -659,18 +688,32 @@ staticPasswords:
         }
 
         // If we reach here, the proxy never became ready. Capture container logs for diagnostics.
+        Console.Error.WriteLine($"[Daytona] Proxy failed to become ready after timeout. Last error: {lastError?.Message ?? "N/A"}");
+
         try
         {
-            Console.Error.WriteLine("Daytona proxy failed to become ready. Capturing container logs for diagnostics:");
-            var logs = await _daytonaProxy.GetLogsAsync();
-            Console.Error.WriteLine(logs);
+            Console.Error.WriteLine($"[Daytona] Proxy container state: {_daytonaProxy.State}");
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to retrieve Daytona proxy logs: {ex.Message}");
+            Console.Error.WriteLine($"[Daytona] Could not get proxy container state: {ex.Message}");
         }
 
-        throw new TimeoutException($"Daytona proxy failed to become ready at {proxyBase}{probePath} within {_proxyReadyTimeout}.", lastError);
+        try
+        {
+            Console.Error.WriteLine("[Daytona] ==================== PROXY CONTAINER LOGS ====================");
+            var logs = await _daytonaProxy.GetLogsAsync();
+            Console.Error.WriteLine(logs);
+            Console.Error.WriteLine("[Daytona] ==================== END PROXY LOGS ====================");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] Failed to retrieve proxy logs: {ex.Message}");
+        }
+
+        throw new TimeoutException(
+            $"Daytona proxy failed to become ready at {proxyBase}{probePath} within {_proxyReadyTimeout}.",
+            lastError);
     }
 
     private async Task EnsureRunnerReadyAsync()
@@ -679,8 +722,31 @@ staticPasswords:
         // We'll verify by checking that it's listening on its port
         var host = _daytonaRunner.Hostname;
 
-        // Log container state for diagnostics
+        // First, check if the container is still running
+        Console.Error.WriteLine($"[Daytona] Checking runner container state...");
         Console.Error.WriteLine($"[Daytona] Runner container state: {_daytonaRunner.State}");
+
+        // First, verify container is still running (not exited with error)
+        Console.Error.WriteLine($"[Daytona] Runner container state before port check: {_daytonaRunner.State}");
+
+        // If container has exited, capture logs immediately
+        if (_daytonaRunner.State == DotNet.Testcontainers.Containers.TestcontainersStates.Exited)
+        {
+            Console.Error.WriteLine("[Daytona] ERROR: Runner container has exited before readiness check!");
+            try
+            {
+                Console.Error.WriteLine("[Daytona] ==================== RUNNER EXITED - CAPTURING LOGS ====================");
+                var logs = await _daytonaRunner.GetLogsAsync();
+                Console.Error.WriteLine(logs);
+                Console.Error.WriteLine("[Daytona] ==================== END RUNNER LOGS ====================");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Daytona] Failed to retrieve runner logs: {ex.Message}");
+            }
+
+            throw new InvalidOperationException("Runner container exited unexpectedly during startup. Check logs above for 'undefined response type' error.");
+        }
 
         // Verify port is exposed before attempting to get mapped port
         int mappedPort;
@@ -731,18 +797,48 @@ staticPasswords:
 
         // If we reach here, the runner never became ready. Capture container logs for diagnostics.
         Console.Error.WriteLine($"[Daytona] Runner failed to become ready after {attemptCount} attempts over {_readyTimeout}.");
+        Console.Error.WriteLine($"[Daytona] Last error: {lastError?.Message ?? "N/A"}");
+
+        // Check container state and exit code
         try
         {
-            Console.Error.WriteLine("[Daytona] Capturing container logs for diagnostics:");
+            Console.Error.WriteLine($"[Daytona] Runner container final state: {_daytonaRunner.State}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] Could not get container state: {ex.Message}");
+        }
+
+        // Capture runner logs
+        try
+        {
+            Console.Error.WriteLine("[Daytona] ==================== RUNNER CONTAINER LOGS ====================");
             var logs = await _daytonaRunner.GetLogsAsync();
             Console.Error.WriteLine(logs);
+            Console.Error.WriteLine("[Daytona] ==================== END RUNNER LOGS ====================");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Daytona] Failed to retrieve runner logs: {ex.Message}");
         }
 
-        throw new TimeoutException($"Daytona runner failed to become ready at {host}:{mappedPort} within {_readyTimeout}.", lastError);
+        // Also capture API logs for context
+        try
+        {
+            Console.Error.WriteLine("[Daytona] ==================== API CONTAINER LOGS ====================");
+            var apiLogs = await _daytonaApi.GetLogsAsync();
+            Console.Error.WriteLine(apiLogs);
+            Console.Error.WriteLine("[Daytona] ==================== END API LOGS ====================");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Daytona] Failed to retrieve API logs: {ex.Message}");
+        }
+
+        throw new TimeoutException(
+            $"Daytona runner failed to become ready at {host}:{mappedPort} within {_readyTimeout}. " +
+            "Check container logs above for 'undefined response type' or other startup errors.",
+            lastError);
     }
 
     private IContainer BuildRunnerContainer(string apiExternalUrl)
@@ -834,6 +930,13 @@ staticPasswords:
     {
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
 
+        // IMPORTANT: The runner constructs its own API paths internally.
+        // It expects the base API URL WITHOUT the /api suffix.
+        // The runner will append its own paths like /config, /api/..., etc.
+        var apiBaseUrl = GetApiInternalBaseUrl(); // Returns http://daytona-api:3000 (no /api suffix)
+
+        Console.Error.WriteLine($"[Daytona] Runner API_URL will be set to: {apiBaseUrl}");
+
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
@@ -848,8 +951,8 @@ staticPasswords:
             .WithEnvironment("RUNNER_PORT", DefaultRunnerPort.ToString())
             .WithEnvironment("RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
             // API connection configuration
-            // Use GetProxyApiUrl to ensure /api suffix is included for proper API endpoint routing
-            .WithEnvironment("API_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
+            // CRITICAL: Use base URL without /api suffix - runner constructs its own paths
+            .WithEnvironment("API_URL", apiBaseUrl)
             .WithEnvironment("API_KEY", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
             // Legacy/default runner environment variables
@@ -857,9 +960,10 @@ staticPasswords:
             .WithEnvironment("ENCRYPTION_SALT", _encryptionSalt)
             .WithEnvironment("DEFAULT_RUNNER_PORT", DefaultRunnerPort.ToString())
             .WithEnvironment("DEFAULT_RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
-            .WithEnvironment("DEFAULT_RUNNER_API_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
-            .WithEnvironment("DAYTONA_API_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
-            .WithEnvironment("SERVER_URL", GetProxyApiUrl(GetApiInternalBaseUrl()))
+            // Use base URL without /api suffix for all API URLs
+            .WithEnvironment("DEFAULT_RUNNER_API_URL", apiBaseUrl)
+            .WithEnvironment("DAYTONA_API_URL", apiBaseUrl)
+            .WithEnvironment("SERVER_URL", apiBaseUrl)
             .WithEnvironment("DAYTONA_RUNNER_TOKEN", ApiKey)
             // Runner quotas and limits
             .WithEnvironment("RUNNER_CPU", "4")
