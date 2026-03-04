@@ -447,8 +447,9 @@ staticPasswords:
             await _daytonaRunner.StartAsync();
             Console.Error.WriteLine("[Daytona] ✓ Runner started");
 
-            // Wait for runner to fully initialize
-            await Task.Delay(TimeSpan.FromSeconds(3));
+            // Verify runner is actually ready before proceeding
+            await EnsureRunnerReadyAsync();
+            Console.Error.WriteLine("[Daytona] ✓ Runner ready");
 
             // Build and start proxy after API is fully ready
             // Proxy needs the internal API URL for communication
@@ -672,6 +673,50 @@ staticPasswords:
         throw new TimeoutException($"Daytona proxy failed to become ready at {proxyBase}{probePath} within {_proxyReadyTimeout}.", lastError);
     }
 
+    private async Task EnsureRunnerReadyAsync()
+    {
+        // The runner should be able to connect to the API and Docker daemon
+        // We'll verify by checking that it's listening on its port
+        var host = _daytonaRunner.Hostname;
+        var mappedPort = _daytonaRunner.GetMappedPublicPort(DefaultRunnerPort);
+        var deadline = DateTimeOffset.UtcNow + _readyTimeout;
+        Exception? lastError = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                // Try to connect to the runner port
+                using var client = new TcpClient();
+                await client.ConnectAsync(host, mappedPort).WaitAsync(_readyRequestTimeout);
+                if (client.Connected)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(_readyPollInterval);
+        }
+
+        // If we reach here, the runner never became ready. Capture container logs for diagnostics.
+        try
+        {
+            Console.Error.WriteLine("Daytona runner failed to become ready. Capturing container logs for diagnostics:");
+            var logs = await _daytonaRunner.GetLogsAsync();
+            Console.Error.WriteLine(logs);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to retrieve Daytona runner logs: {ex.Message}");
+        }
+
+        throw new TimeoutException($"Daytona runner failed to become ready at {host}:{mappedPort} within {_readyTimeout}.", lastError);
+    }
+
     private IContainer BuildRunnerContainer(string apiExternalUrl)
     {
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
@@ -688,8 +733,7 @@ staticPasswords:
             .WithEnvironment("SERVER_URL", $"http://daytona-api:{DefaultApiPort}")
             .WithEnvironment("DAYTONA_RUNNER_TOKEN", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("runner"))
+            // Runner readiness verified via port check after startup
             .Build();
     }
 
@@ -804,9 +848,9 @@ staticPasswords:
                 // Security options: prevent privilege escalation
                 cmd.HostConfig.SecurityOpt = ["no-new-privileges:true"];
             })
-            // Wait for runner to be ready
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("runner"))
+            // Runner doesn't have a simple startup message, so we'll check port availability
+            // The runner container starts but may not log "runner" in all versions
+            // Actual readiness is verified in EnsureRunnerReadyAsync after startup
             .Build();
     }
 
