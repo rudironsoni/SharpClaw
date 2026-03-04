@@ -457,14 +457,26 @@ staticPasswords:
                 var healthCheck = await client.GetAsync(new Uri(new Uri(ServerUrl), _healthPath));
                 Console.Error.WriteLine($"[Daytona] API health check before runner start: {healthCheck.StatusCode}");
 
-                // Also check the /config endpoint that the runner needs
-                var configCheck = await client.GetAsync(new Uri(new Uri(ServerUrl), "/config"));
-                Console.Error.WriteLine($"[Daytona] API /config check before runner start: {configCheck.StatusCode}");
+                // Check both /api/config and /config endpoints that the runner might need
+                var apiConfigCheck = await client.GetAsync(new Uri(new Uri(ServerUrl), "/api/config"));
+                Console.Error.WriteLine($"[Daytona] API /api/config check before runner start: {apiConfigCheck.StatusCode}");
 
-                if (configCheck.StatusCode != HttpStatusCode.OK)
+                var fallbackConfigCheck = await client.GetAsync(new Uri(new Uri(ServerUrl), "/config"));
+                Console.Error.WriteLine($"[Daytona] API /config check before runner start: {fallbackConfigCheck.StatusCode}");
+
+                if (apiConfigCheck.StatusCode == HttpStatusCode.OK)
                 {
-                    var configBody = await configCheck.Content.ReadAsStringAsync();
-                    Console.Error.WriteLine($"[Daytona] WARNING: API /config returned non-OK status. Body: {configBody[..Math.Min(200, configBody.Length)]}");
+                    var configBody = await apiConfigCheck.Content.ReadAsStringAsync();
+                    Console.Error.WriteLine($"[Daytona] API /api/config response: {configBody[..Math.Min(200, configBody.Length)]}");
+                }
+                else if (fallbackConfigCheck.StatusCode == HttpStatusCode.OK)
+                {
+                    var configBody = await fallbackConfigCheck.Content.ReadAsStringAsync();
+                    Console.Error.WriteLine($"[Daytona] API /config response: {configBody[..Math.Min(200, configBody.Length)]}");
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[Daytona] WARNING: Neither /api/config nor /config returned OK status");
                 }
             }
             catch (Exception ex)
@@ -950,24 +962,25 @@ staticPasswords:
     {
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
 
-        // IMPORTANT: The runner constructs its own API paths internally.
-        // It expects the base API URL WITHOUT the /api suffix.
-        // The runner will append its own paths like /config, /api/..., etc.
-        var apiBaseUrl = GetApiInternalBaseUrl(); // Returns http://daytona-api:3000 (no /api suffix)
-        var apiUrlWithSuffix = GetProxyApiUrl(apiBaseUrl); // Returns http://daytona-api:3000/api
+        // IMPORTANT: The Daytona runner v0.148.0 expects the API URL to include the /api path.
+        // The runner fetches config from {API_URL}/config and makes other API calls.
+        // The API container exposes routes at /api/* and /config (root level).
+        // For internal container communication, use the full URL with /api suffix.
+        var apiInternalBaseUrl = GetApiInternalBaseUrl(); // http://daytona-api:3000
+        var apiUrlWithApiPath = $"{apiInternalBaseUrl}/api"; // http://daytona-api:3000/api
 
-        Console.Error.WriteLine($"[Daytona] Runner API_URL will be set to: {apiBaseUrl}");
-        Console.Error.WriteLine($"[Daytona] Creating .env file in {_runnerEnvDir} with API_URL={apiBaseUrl}");
+        Console.Error.WriteLine($"[Daytona] Runner API_URL will be set to: {apiUrlWithApiPath}");
+        Console.Error.WriteLine($"[Daytona] Creating .env file in {_runnerEnvDir} with API_URL={apiUrlWithApiPath}");
 
         // Daytona runner REQUIRES a .env file to exist with specific variables.
         // We create the .env file in a temporary directory on the host, then mount
         // the entire directory to the container's working directory. This is more
         // reliable than mounting single files which can have synchronization issues.
         var envFilePath = Path.Combine(_runnerEnvDir, ".env");
-        File.WriteAllText(envFilePath, $@"API_URL={apiBaseUrl}
-DAYTONA_API_URL={apiBaseUrl}
-SERVER_URL={apiBaseUrl}
-DEFAULT_RUNNER_API_URL={apiBaseUrl}
+        File.WriteAllText(envFilePath, $@"API_URL={apiUrlWithApiPath}
+DAYTONA_API_URL={apiUrlWithApiPath}
+SERVER_URL={apiUrlWithApiPath}
+DEFAULT_RUNNER_API_URL={apiUrlWithApiPath}
 API_KEY={ApiKey}
 API_TOKEN={ApiKey}
 DAYTONA_RUNNER_TOKEN={ApiKey}
@@ -977,6 +990,15 @@ RUNNER_PORT={DefaultRunnerPort}
 RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}
 DOCKER_HOST=tcp://daytona-dind:2375
 ");
+
+        // Also write a json config file as fallback (some runner versions expect this)
+        var configJsonPath = Path.Combine(_runnerEnvDir, "config.json");
+        File.WriteAllText(configJsonPath, $@"{{
+  ""apiUrl"": ""{apiUrlWithApiPath}"",
+  ""apiKey"": ""{ApiKey}"",
+  ""runnerId"": ""default-runner"",
+  ""runnerName"": ""default""
+}}");
 
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
@@ -992,9 +1014,18 @@ DOCKER_HOST=tcp://daytona-dind:2375
             // This prevents container escape vulnerabilities from Docker socket access
             .WithEnvironment("DOCKER_HOST", "tcp://daytona-dind:2375")
             // API connection configuration - also passed as env vars for redundancy
-            .WithEnvironment("API_URL", apiBaseUrl)
+            .WithEnvironment("API_URL", apiUrlWithApiPath)
+            .WithEnvironment("DAYTONA_API_URL", apiUrlWithApiPath)
+            .WithEnvironment("SERVER_URL", apiUrlWithApiPath)
+            .WithEnvironment("DEFAULT_RUNNER_API_URL", apiUrlWithApiPath)
             .WithEnvironment("API_KEY", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
+            .WithEnvironment("DAYTONA_RUNNER_TOKEN", ApiKey)
+            // Runner identification
+            .WithEnvironment("RUNNER_NAME", "default")
+            .WithEnvironment("RUNNER_ID", "default-runner")
+            .WithEnvironment("RUNNER_PORT", DefaultRunnerPort.ToString())
+            .WithEnvironment("RUNNER_URL", $"http://daytona-runner:{DefaultRunnerPort}")
             // Security hardening via Docker API
             .WithCreateParameterModifier(cmd =>
             {
@@ -1008,9 +1039,8 @@ DOCKER_HOST=tcp://daytona-dind:2375
                 // Security options: prevent privilege escalation
                 cmd.HostConfig.SecurityOpt = ["no-new-privileges:true"];
             })
-            // Runner doesn't have a simple startup message, so we'll check port availability
-            // The runner container starts but may not log "runner" in all versions
-            // Actual readiness is verified in EnsureRunnerReadyAsync after startup
+            // The runner's readiness is verified in EnsureRunnerReadyAsync after startup
+            // No wait strategy here because the runner needs to start and then fetch config from API
             .Build();
     }
 
@@ -1067,7 +1097,13 @@ DOCKER_HOST=tcp://daytona-dind:2375
 
     private async Task EnsureApiConfigReadyAsync()
     {
-        var configUri = new Uri(new Uri(ServerUrl), "/config");
+        // The Daytona runner expects to fetch config from {API_URL}/config
+        // Since we set API_URL to include /api, the actual endpoint is /api/config
+        // But we also check the internal /config endpoint as a fallback
+        var apiBaseUri = new Uri(ServerUrl);
+        var configUri = new Uri(apiBaseUri, "/api/config");
+        var fallbackConfigUri = new Uri(apiBaseUri, "/config");
+
         using var client = new HttpClient
         {
             Timeout = _readyRequestTimeout
@@ -1080,9 +1116,28 @@ DOCKER_HOST=tcp://daytona-dind:2375
         {
             try
             {
+                // Try the /api/config endpoint first (most likely for runner)
                 using var response = await client.GetAsync(configUri);
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
+                    var content = await response.Content.ReadAsStringAsync();
+                    Console.Error.WriteLine($"[Daytona] API /api/config returned: {content[..Math.Min(100, content.Length)]}...");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            try
+            {
+                // Fallback to /config endpoint
+                using var response = await client.GetAsync(fallbackConfigUri);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    Console.Error.WriteLine($"[Daytona] API /config returned: {content[..Math.Min(100, content.Length)]}...");
                     return;
                 }
             }
@@ -1095,7 +1150,7 @@ DOCKER_HOST=tcp://daytona-dind:2375
         }
 
         throw new TimeoutException(
-            $"Daytona API /config endpoint failed to become ready at {configUri} within {_readyTimeout}.",
+            $"Daytona API /api/config (or /config) endpoint failed to become ready within {_readyTimeout}.",
             lastError);
     }
 
