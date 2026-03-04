@@ -959,9 +959,9 @@ staticPasswords:
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
             // Mount .env file to prevent "open .env: no such file or directory" error
-            // The runner expects .env in its working directory - mount to common locations
-            .WithBindMount(_runnerEnvFilePath, "/workspace/.env")
-            .WithBindMount(_runnerEnvFilePath, "/app/.env")
+            // The runner expects .env in its working directory - mount to root and set working dir
+            .WithWorkingDirectory("/")
+            .WithBindMount(_runnerEnvFilePath, "/.env")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
