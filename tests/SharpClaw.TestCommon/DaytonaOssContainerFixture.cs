@@ -946,20 +946,36 @@ staticPasswords:
 
         // Daytona runner REQUIRES a .env file to exist with specific variables.
         // We create it via custom entrypoint since file mounting was unreliable.
-        // The command creates /.env and then starts the daytona service.
+        // The command creates .env in both root AND working directory, then starts daytona.
+        // We use WithEntrypoint instead of WithCommand to ensure it runs before the default CMD.
         var entrypointCommand =
+            $"echo '[Daytona] Creating .env files...' && " +
+            $"pwd && " + // Debug: show current working directory
             $"echo 'API_URL={apiBaseUrl}' > /.env && " +
+            $"echo 'API_URL={apiBaseUrl}' > $(pwd)/.env && " + // Also create in cwd
             $"echo 'DAYTONA_API_URL={apiBaseUrl}' >> /.env && " +
+            $"echo 'DAYTONA_API_URL={apiBaseUrl}' >> $(pwd)/.env && " +
             $"echo 'SERVER_URL={apiBaseUrl}' >> /.env && " +
+            $"echo 'SERVER_URL={apiBaseUrl}' >> $(pwd)/.env && " +
             $"echo 'DEFAULT_RUNNER_API_URL={apiBaseUrl}' >> /.env && " +
+            $"echo 'DEFAULT_RUNNER_API_URL={apiBaseUrl}' >> $(pwd)/.env && " +
             $"echo 'API_KEY={ApiKey}' >> /.env && " +
+            $"echo 'API_KEY={ApiKey}' >> $(pwd)/.env && " +
             $"echo 'API_TOKEN={ApiKey}' >> /.env && " +
+            $"echo 'API_TOKEN={ApiKey}' >> $(pwd)/.env && " +
             $"echo 'DAYTONA_RUNNER_TOKEN={ApiKey}' >> /.env && " +
+            $"echo 'DAYTONA_RUNNER_TOKEN={ApiKey}' >> $(pwd)/.env && " +
             $"echo 'RUNNER_NAME=default' >> /.env && " +
+            $"echo 'RUNNER_NAME=default' >> $(pwd)/.env && " +
             $"echo 'RUNNER_ID=default-runner' >> /.env && " +
+            $"echo 'RUNNER_ID=default-runner' >> $(pwd)/.env && " +
             $"echo 'RUNNER_PORT={DefaultRunnerPort}' >> /.env && " +
+            $"echo 'RUNNER_PORT={DefaultRunnerPort}' >> $(pwd)/.env && " +
             $"echo 'RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}' >> /.env && " +
+            $"echo 'RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}' >> $(pwd)/.env && " +
             $"echo 'DOCKER_HOST=tcp://daytona-dind:2375' >> /.env && " +
+            $"echo 'DOCKER_HOST=tcp://daytona-dind:2375' >> $(pwd)/.env && " +
+            $"ls -la /.env $(pwd)/.env 2>&1 || true && " + // Debug: verify files exist
             $"cat /.env && " + // Debug: show what we created
             "exec daytona serve"; // Start the actual service
 
@@ -977,7 +993,7 @@ staticPasswords:
             .WithEnvironment("API_KEY", ApiKey)
             .WithEnvironment("API_TOKEN", ApiKey)
             // Use custom entrypoint to create .env file before starting Daytona
-            .WithCommand("sh", "-c", entrypointCommand)
+            .WithEntrypoint("sh", "-c", entrypointCommand)
             // Security hardening via Docker API
             .WithCreateParameterModifier(cmd =>
             {
