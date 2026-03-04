@@ -45,7 +45,7 @@ public class DaytonaProviderIntegrationTests : IClassFixture<DaytonaOssContainer
         }
     }
 
-    [Fact(Skip = "Daytona container .env file issue - see GitHub issue")]
+    [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_UsesDaytonaWhenConfiguredAsDefault()
     {
@@ -59,7 +59,7 @@ public class DaytonaProviderIntegrationTests : IClassFixture<DaytonaOssContainer
         Assert.True(_manager.IsActive(runId));
     }
 
-    [Fact(Skip = "Daytona container .env file issue - see GitHub issue")]
+    [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_RejectsDockerSocketMount()
     {
@@ -70,7 +70,7 @@ public class DaytonaProviderIntegrationTests : IClassFixture<DaytonaOssContainer
             _manager.StartDefaultAsync(Guid.NewGuid().ToString("N"), ["/var/run/docker.sock:/var/run/docker.sock"]));
     }
 
-    [Fact(Skip = "Daytona container .env file issue - see GitHub issue")]
+    [Fact]
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StopAsync_CallsDaytonaApisToStopAndRemove()
     {

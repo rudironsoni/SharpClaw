@@ -438,13 +438,6 @@ RUNNER_ENV_FILE_MOUNTED=true
             return;
         }
 
-        // Skip container startup in CI to avoid .env file issues
-        if (Environment.GetEnvironmentVariable("SKIP_DAYTONA_INTEGRATION") == "true")
-        {
-            Console.Error.WriteLine("[Daytona] Skipping container startup - SKIP_DAYTONA_INTEGRATION is set");
-            return;
-        }
-
         try
         {
             await _network.CreateAsync();
@@ -1015,12 +1008,16 @@ RUNNER_ENV_FILE_MOUNTED=true
         return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
-            // Mount .env file to prevent "open .env: no such file or directory" error
-            // The runner expects .env in its working directory - mount to root and set working dir
+            // Mount .env file to multiple locations to ensure it's found
+            // The runner looks for .env in its working directory (relative path)
+            // We try multiple common home directories since the user may vary
             .WithWorkingDirectory("/")
-            // Use ResourceMapping instead of BindMount for better file handling
-            // This copies the file content into the container rather than bind mounting
-            .WithResourceMapping(new FileInfo(fullPath), "/.env")
+            // Try mounting to /root/.env (if container runs as root)
+            .WithBindMount(fullPath, "/root/.env")
+            // Try mounting to /home/daytona/.env (if daytona user exists)
+            .WithBindMount(fullPath, "/home/daytona/.env")
+            // Also mount to /.env for good measure
+            .WithBindMount(fullPath, "/.env")
             // Expose runner port for API communication
             .WithPortBinding(DefaultRunnerPort, true)
             // Security: Connect to DinD sidecar over TCP instead of mounting host Docker socket
