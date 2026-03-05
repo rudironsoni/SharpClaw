@@ -635,7 +635,13 @@ staticPasswords:
             $"RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}{Environment.NewLine}" +
             "DOCKER_HOST=tcp://daytona-dind:2375";
 
-        File.WriteAllText(Path.Combine(_runnerEnvDir, ".env"), envContent);
+        var envFilePath = Path.Combine(_runnerEnvDir, ".env");
+        File.WriteAllText(envFilePath, envContent);
+        
+        // DIAGNOSTIC: Verify file was created
+        Console.WriteLine($"[Daytona] DIAGNOSTIC: .env file path: {envFilePath}");
+        Console.WriteLine($"[Daytona] DIAGNOSTIC: File exists: {File.Exists(envFilePath)}");
+        Console.WriteLine($"[Daytona] DIAGNOSTIC: File size: {new FileInfo(envFilePath).Length} bytes");
 
         // Create custom Dockerfile with baked-in .env file
         var dockerfileContent = $@"FROM {runnerImage}
