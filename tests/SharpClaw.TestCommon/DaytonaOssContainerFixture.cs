@@ -357,6 +357,7 @@ staticPasswords:
             {
                 Console.WriteLine($"[Daytona] {name} container stdout:\n{stdout.Substring(0, Math.Min(2000, stdout.Length))}");
             }
+
             if (!string.IsNullOrWhiteSpace(stderr))
             {
                 Console.WriteLine($"[Daytona] {name} container stderr:\n{stderr.Substring(0, Math.Min(2000, stderr.Length))}");
