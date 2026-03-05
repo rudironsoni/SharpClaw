@@ -348,6 +348,26 @@ staticPasswords:
         }
     }
 
+    private static async Task LogContainerOutputAsync(IContainer container, string name)
+    {
+        try
+        {
+            var (stdout, stderr) = await container.GetLogsAsync();
+            if (!string.IsNullOrWhiteSpace(stdout))
+            {
+                Console.WriteLine($"[Daytona] {name} container stdout:\n{stdout.Substring(0, Math.Min(2000, stdout.Length))}");
+            }
+            if (!string.IsNullOrWhiteSpace(stderr))
+            {
+                Console.WriteLine($"[Daytona] {name} container stderr:\n{stderr.Substring(0, Math.Min(2000, stderr.Length))}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Daytona] Could not get {name} container logs: {ex.Message}");
+        }
+    }
+
     private static async Task StartContainerWithTimeoutAsync(IContainer container, string name)
     {
         Console.WriteLine($"[Daytona] Starting {name} container...");
@@ -362,12 +382,13 @@ staticPasswords:
         catch (OperationCanceledException)
         {
             Console.WriteLine($"[Daytona] ERROR: {name} container startup timed out after {stopwatch.Elapsed.TotalSeconds:F1}s");
+            await LogContainerOutputAsync(container, name);
             throw new TimeoutException($"{name} container startup timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
         }
         catch (TimeoutException ex)
         {
             Console.WriteLine($"[Daytona] ERROR: {name} container readiness check timed out after {stopwatch.Elapsed.TotalSeconds:F1}s");
-            Console.WriteLine($"[Daytona] ERROR: {ex.Message}");
+            await LogContainerOutputAsync(container, name);
             throw new TimeoutException($"{name} container readiness check timed out. The container started but did not become ready within {ContainerOperationTimeout.TotalMinutes} minutes. Check that the wait strategy is correct for this container.", ex);
         }
     }
