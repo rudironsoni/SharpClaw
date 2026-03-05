@@ -280,7 +280,11 @@ staticPasswords:
             .WithEnvironment("DISABLE_TELEMETRY", "true")
             .WithEnvironment("WEBHOOK_SECRET", ApiKey)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilCommandIsCompleted($"sh -c 'until nc -z localhost {_apiPort} 2>/dev/null; do sleep 1; done'"))
+                .UntilHttpRequestIsSucceeded(request => request
+                    .ForPort((ushort)_apiPort)
+                    .ForPath(_healthPath)
+                    .WithMethod(HttpMethod.Get)
+                    .ForStatusCode(HttpStatusCode.OK)))
             .Build();
 
         _dind = BuildDindContainer();
