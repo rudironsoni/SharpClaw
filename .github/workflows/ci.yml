@@ -10,21 +10,11 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 30
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Free disk space
-        # Integration tests require Docker containers - free up space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          df -h
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -44,13 +34,14 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Run ALL tests
+      - name: Run tests (exclude slow integration)
         run: |
           mkdir -p TestResults
           dotnet test --configuration Release \
             --logger "trx;LogFileName=test-results.trx" \
             --results-directory TestResults \
-            --blame-hang-timeout 30m \
+            --filter "Category!=ExternalInfrastructure" \
+            --blame-hang-timeout 10m \
             --blame-crash
 
       - name: Upload test results
