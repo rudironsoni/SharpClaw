@@ -10,6 +10,7 @@ using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
 using Xunit;
 
+// Trigger CI: Force rebuild
 namespace SharpClaw.TestCommon;
 
 /// <summary>
