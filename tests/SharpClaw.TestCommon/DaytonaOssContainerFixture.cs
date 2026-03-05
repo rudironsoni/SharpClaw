@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Threading;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
@@ -38,6 +39,7 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private const string DefaultRegistryImage = "registry:2.8.2";
     private const string DefaultDexImage = "dexidp/dex:v2.42.0";
     private const string DefaultDindImage = "docker:27-dind";
+    private static readonly TimeSpan ContainerOperationTimeout = TimeSpan.FromMinutes(5);
 
     private readonly INetwork _network;
     private readonly IContainer _postgres;
@@ -297,27 +299,33 @@ staticPasswords:
 
         try
         {
-            await _network.CreateAsync();
+            Console.WriteLine("[Daytona] Creating network...");
+            using (var networkCts = new CancellationTokenSource(ContainerOperationTimeout))
+            {
+                await _network.CreateAsync(networkCts.Token);
+            }
+
             _networkCreated = true;
+            Console.WriteLine("[Daytona] Network created successfully");
 
-            await _postgres.StartAsync();
-            await _redis.StartAsync();
-            await _minio.StartAsync();
-            await _registry.StartAsync();
-            await _dex.StartAsync();
+            await StartContainerWithTimeoutAsync(_postgres, "Postgres");
+            await StartContainerWithTimeoutAsync(_redis, "Redis");
+            await StartContainerWithTimeoutAsync(_minio, "MinIO");
+            await StartContainerWithTimeoutAsync(_registry, "Registry");
+            await StartContainerWithTimeoutAsync(_dex, "Dex");
 
-            await _dind.StartAsync();
-            await _daytonaApi.StartAsync();
+            await StartContainerWithTimeoutAsync(_dind, "Docker-in-Docker");
+            await StartContainerWithTimeoutAsync(_daytonaApi, "Daytona API");
 
             ServerUrl = $"http://127.0.0.1:{_daytonaApi.GetMappedPublicPort(_apiPort)}";
 
-            _daytonaRunner = await BuildRunnerContainerAsync();
-            await _daytonaRunner.StartAsync();
-            await EnsureRunnerReadyAsync();
+            _daytonaRunner = await BuildRunnerContainerWithTimeoutAsync();
+            await StartContainerWithTimeoutAsync(_daytonaRunner, "Daytona Runner");
+            await EnsureRunnerReadyWithTimeoutAsync();
 
             _daytonaProxy = BuildProxyContainer();
-            await _daytonaProxy.StartAsync();
-            await EnsureProxyReadyAsync();
+            await StartContainerWithTimeoutAsync(_daytonaProxy, "Daytona Proxy");
+            await EnsureProxyReadyWithTimeoutAsync();
 
             _started = true;
         }
@@ -333,6 +341,116 @@ staticPasswords:
 
             throw;
         }
+    }
+
+    private static async Task StartContainerWithTimeoutAsync(IContainer container, string name)
+    {
+        Console.WriteLine($"[Daytona] Starting {name} container...");
+        try
+        {
+            using var cts = new CancellationTokenSource(ContainerOperationTimeout);
+            await container.StartAsync(cts.Token);
+            Console.WriteLine($"[Daytona] {name} container started successfully");
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine($"[Daytona] ERROR: {name} container startup timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+            throw new TimeoutException($"{name} container startup timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+        }
+    }
+
+    private async Task<IContainer> BuildRunnerContainerWithTimeoutAsync()
+    {
+        Console.WriteLine("[Daytona] Building custom runner image...");
+        try
+        {
+            using var cts = new CancellationTokenSource(ContainerOperationTimeout);
+            var runnerContainer = await BuildRunnerContainerWithTokenAsync(cts.Token);
+            Console.WriteLine("[Daytona] Custom runner image built successfully");
+            return runnerContainer;
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine($"[Daytona] ERROR: Custom runner image build timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+            throw new TimeoutException($"Custom runner image build timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+        }
+    }
+
+    private async Task EnsureRunnerReadyWithTimeoutAsync()
+    {
+        Console.WriteLine("[Daytona] Waiting for runner to be ready...");
+        var deadline = DateTimeOffset.UtcNow + _readyTimeout;
+        Exception? lastError = null;
+
+        using var cts = new CancellationTokenSource(ContainerOperationTimeout);
+        var host = _daytonaRunner.Hostname;
+        var mappedPort = _daytonaRunner.GetMappedPublicPort(DefaultRunnerPort);
+
+        while (DateTimeOffset.UtcNow < deadline && !cts.IsCancellationRequested)
+        {
+            try
+            {
+                using var client = new TcpClient();
+                await client.ConnectAsync(host, mappedPort).WaitAsync(_readyRequestTimeout, cts.Token);
+                if (client.Connected)
+                {
+                    Console.WriteLine("[Daytona] Runner is ready");
+                    return;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine($"[Daytona] ERROR: Runner readiness check timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+                throw new TimeoutException($"Runner readiness check timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(_readyPollInterval, cts.Token);
+        }
+
+        throw new TimeoutException($"Daytona runner not ready at {host}:{mappedPort} within {_readyTimeout}.", lastError);
+    }
+
+    private async Task EnsureProxyReadyWithTimeoutAsync()
+    {
+        Console.WriteLine("[Daytona] Waiting for proxy to be ready...");
+        var host = _daytonaProxy.Hostname;
+        var mappedPort = _daytonaProxy.GetMappedPublicPort(DefaultProxyPort);
+        var uri = new UriBuilder("http", host, mappedPort, "/health").Uri;
+        using var client = new HttpClient { Timeout = _readyRequestTimeout };
+        var deadline = DateTimeOffset.UtcNow + _readyTimeout;
+        Exception? lastError = null;
+
+        using var cts = new CancellationTokenSource(ContainerOperationTimeout);
+
+        while (DateTimeOffset.UtcNow < deadline && !cts.IsCancellationRequested)
+        {
+            try
+            {
+                using var response = await client.GetAsync(uri, cts.Token);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    Console.WriteLine("[Daytona] Proxy is ready");
+                    return;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine($"[Daytona] ERROR: Proxy readiness check timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+                throw new TimeoutException($"Proxy readiness check timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(_readyPollInterval, cts.Token);
+        }
+
+        throw new TimeoutException($"Daytona proxy not ready at {uri} within {_readyTimeout}.", lastError);
     }
 
     public Task InitializeAsync()
@@ -464,7 +582,7 @@ staticPasswords:
             .Build();
     }
 
-    private async Task<IContainer> BuildRunnerContainerAsync()
+    private async Task<IContainer> BuildRunnerContainerWithTokenAsync(CancellationToken cancellationToken)
     {
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
         var apiUrl = $"http://daytona-api:{_apiPort}/api";
@@ -499,7 +617,7 @@ COPY .env /config/.env
             .WithBuildArgument("DOCKER_BUILDKIT", "1");
 
         _runnerCustomImage = imageBuilder.Build();
-        await _runnerCustomImage.CreateAsync();
+        await _runnerCustomImage.CreateAsync(cancellationToken);
 
         return new ContainerBuilder(_runnerCustomImage)
             .WithNetwork(_network)
