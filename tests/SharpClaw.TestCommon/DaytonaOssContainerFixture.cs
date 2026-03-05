@@ -622,48 +622,10 @@ staticPasswords:
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
         var apiUrl = $"http://daytona-api:{_apiPort}/api";
 
-        var envContent = $"API_URL={apiUrl}{Environment.NewLine}" +
-            $"DAYTONA_API_URL={apiUrl}{Environment.NewLine}" +
-            $"SERVER_URL={apiUrl}{Environment.NewLine}" +
-            $"DEFAULT_RUNNER_API_URL={apiUrl}{Environment.NewLine}" +
-            $"API_KEY={ApiKey}{Environment.NewLine}" +
-            $"API_TOKEN={ApiKey}{Environment.NewLine}" +
-            $"DAYTONA_RUNNER_TOKEN={ApiKey}{Environment.NewLine}" +
-            $"RUNNER_NAME=default{Environment.NewLine}" +
-            $"RUNNER_ID=default-runner{Environment.NewLine}" +
-            $"RUNNER_PORT={DefaultRunnerPort}{Environment.NewLine}" +
-            $"RUNNER_URL=http://daytona-runner:{DefaultRunnerPort}{Environment.NewLine}" +
-            "DOCKER_HOST=tcp://daytona-dind:2375";
+        Console.WriteLine($"[Daytona] Creating runner container with env vars only (no .env file)...");
 
-        var envFilePath = Path.Combine(_runnerEnvDir, ".env");
-        File.WriteAllText(envFilePath, envContent);
-        
-        // DIAGNOSTIC: Verify file was created
-        Console.WriteLine($"[Daytona] DIAGNOSTIC: .env file path: {envFilePath}");
-        Console.WriteLine($"[Daytona] DIAGNOSTIC: File exists: {File.Exists(envFilePath)}");
-        Console.WriteLine($"[Daytona] DIAGNOSTIC: File size: {new FileInfo(envFilePath).Length} bytes");
-
-        // Create custom Dockerfile with baked-in .env file and verification
-        var dockerfileContent = $@"FROM {runnerImage}
-WORKDIR /config
-COPY .env /config/.env
-RUN echo 'Verifying .env file exists during build:' && ls -la /config/
-RUN echo 'Contents of /config/.env:' && cat /config/.env || echo 'FILE NOT FOUND'
-RUN echo 'Setting permissions:' && chmod 644 /config/.env
-"
-
-        var dockerfilePath = Path.Combine(_runnerEnvDir, "Dockerfile");
-        File.WriteAllText(dockerfilePath, dockerfileContent);
-
-        // Build custom image with .env baked in
-        var imageBuilder = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(_runnerEnvDir)
-            .WithBuildArgument("DOCKER_BUILDKIT", "1");
-
-        _runnerCustomImage = imageBuilder.Build();
-        await _runnerCustomImage.CreateAsync(cancellationToken);
-
-        return new ContainerBuilder(_runnerCustomImage)
+        // Use base image directly with environment variables only
+        return new ContainerBuilder(runnerImage)
             .WithNetwork(_network)
             .WithNetworkAliases("daytona-runner")
             .WithWorkingDirectory("/config")
