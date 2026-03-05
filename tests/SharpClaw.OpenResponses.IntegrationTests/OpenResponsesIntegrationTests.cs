@@ -5,6 +5,7 @@ using SharpClaw.OpenResponses.HttpApi;
 
 namespace SharpClaw.OpenResponses.IntegrationTests;
 
+[Trait("Category", "ExternalInfrastructure")]
 public class OpenResponsesIntegrationTests(WebApplicationFactory<Program> factory)
     : IClassFixture<WebApplicationFactory<Program>>
 {

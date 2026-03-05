@@ -11,7 +11,7 @@ namespace SharpClaw.TestCommon;
 public class FakeEventPublisher : IEventPublisher, IDisposable
 {
     private readonly ConcurrentDictionary<string, Channel<EventFrame>> _topics = new(StringComparer.Ordinal);
-    private readonly ConcurrentBag<PublishedEvent> _publishedEvents = [];
+    private readonly List<PublishedEvent> _publishedEvents = [];
     private readonly Lock _lock = new();
     private bool _disposed;
 
@@ -20,7 +20,10 @@ public class FakeEventPublisher : IEventPublisher, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         var channel = _topics.GetOrAdd(topic, _ => Channel.CreateUnbounded<EventFrame>());
-        _publishedEvents.Add(new PublishedEvent(topic, eventFrame, DateTimeOffset.UtcNow));
+        lock (_lock)
+        {
+            _publishedEvents.Add(new PublishedEvent(topic, eventFrame, DateTimeOffset.UtcNow));
+        }
 
         return channel.Writer.WriteAsync(eventFrame, cancellationToken).AsTask();
     }
@@ -61,8 +64,11 @@ public class FakeEventPublisher : IEventPublisher, IDisposable
 
     public IReadOnlyList<PublishedEvent> GetPublishedEvents(string? topic = null)
     {
-        var events = _publishedEvents.ToList();
-        return topic is null ? events : events.Where(e => e.Topic == topic).ToList();
+        lock (_lock)
+        {
+            var events = _publishedEvents.ToList();
+            return topic is null ? events : events.Where(e => e.Topic == topic).ToList();
+        }
     }
 
     public bool HasTopic(string topic) => _topics.ContainsKey(topic);

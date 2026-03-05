@@ -75,7 +75,7 @@ public class RunCoordinatorEdgeCaseTests
     {
         var coordinator = TestHelpers.CreateRunCoordinator();
 
-        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
             await coordinator.StartAsync("input-1", null!);
         });
@@ -97,7 +97,7 @@ public class RunCoordinatorEdgeCaseTests
     {
         var coordinator = TestHelpers.CreateRunCoordinator();
 
-        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
             await coordinator.AbortAsync(null!, "tenant-1");
         });
@@ -108,7 +108,7 @@ public class RunCoordinatorEdgeCaseTests
     {
         var coordinator = TestHelpers.CreateRunCoordinator();
 
-        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
             await coordinator.AbortAsync("run-1", null!);
         });
@@ -119,7 +119,7 @@ public class RunCoordinatorEdgeCaseTests
     {
         var coordinator = TestHelpers.CreateRunCoordinator();
 
-        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
             await coordinator.GetSnapshotAsync(null!, "tenant-1");
         });
@@ -130,7 +130,7 @@ public class RunCoordinatorEdgeCaseTests
     {
         var coordinator = TestHelpers.CreateRunCoordinator();
 
-        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
             await coordinator.ReadEventsAsync(null!).ToListAsync();
         });

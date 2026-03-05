@@ -126,14 +126,6 @@
           "System.Diagnostics.EventLog": "6.0.0"
         }
       },
-      "Docker.DotNet.Enhanced": {
-        "type": "Transitive",
-        "resolved": "3.131.1",
-        "contentHash": "hGLHCNUsQbT2Ab/HUznRnNqYZQs40zInXa3eLwYjeNyfUYbw1pqqDGqcOLl5uGepS8IuigEYakEdAcVT/2ezYg==",
-        "dependencies": {
-          "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
-        }
-      },
       "Docker.DotNet.Enhanced.X509": {
         "type": "Transitive",
         "resolved": "3.131.1",
@@ -409,6 +401,15 @@
       },
       "sharpclaw.tenancy": {
         "type": "Project"
+      },
+      "Docker.DotNet.Enhanced": {
+        "type": "CentralTransitive",
+        "requested": "[3.131.1, )",
+        "resolved": "3.131.1",
+        "contentHash": "hGLHCNUsQbT2Ab/HUznRnNqYZQs40zInXa3eLwYjeNyfUYbw1pqqDGqcOLl5uGepS8IuigEYakEdAcVT/2ezYg==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
+        }
       },
       "Microsoft.Agents.AI": {
         "type": "CentralTransitive",

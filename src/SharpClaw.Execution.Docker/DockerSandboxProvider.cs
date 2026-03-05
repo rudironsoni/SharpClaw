@@ -104,8 +104,8 @@ public sealed class DockerSandboxProvider : ISandboxProvider, IDisposable
             }
         };
 
-        // Container configuration
-        var config = new Config
+        // Create the container with new API (CreateContainerParameters takes properties directly)
+        var createParams = new CreateContainerParameters
         {
             Image = _options.ContainerImage ?? "alpine:latest",
             Cmd = new List<string> { "sleep", "infinity" }, // Keep container running
@@ -120,12 +120,7 @@ public sealed class DockerSandboxProvider : ISandboxProvider, IDisposable
             {
                 $"SHARPCLAW_CONTAINER_NAME={containerName}",
                 $"SHARPCLAW_PROVIDER={Name}"
-            }
-        };
-
-        // Create the container
-        var createParams = new CreateContainerParameters(config)
-        {
+            },
             HostConfig = hostConfig,
             Name = containerName
         };
