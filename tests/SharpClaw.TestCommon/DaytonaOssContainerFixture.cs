@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -346,16 +347,24 @@ staticPasswords:
     private static async Task StartContainerWithTimeoutAsync(IContainer container, string name)
     {
         Console.WriteLine($"[Daytona] Starting {name} container...");
+        var stopwatch = Stopwatch.StartNew();
+
         try
         {
             using var cts = new CancellationTokenSource(ContainerOperationTimeout);
             await container.StartAsync(cts.Token);
-            Console.WriteLine($"[Daytona] {name} container started successfully");
+            Console.WriteLine($"[Daytona] {name} container started successfully in {stopwatch.Elapsed.TotalSeconds:F1}s");
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine($"[Daytona] ERROR: {name} container startup timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+            Console.WriteLine($"[Daytona] ERROR: {name} container startup timed out after {stopwatch.Elapsed.TotalSeconds:F1}s");
             throw new TimeoutException($"{name} container startup timed out after {ContainerOperationTimeout.TotalMinutes} minutes");
+        }
+        catch (TimeoutException ex)
+        {
+            Console.WriteLine($"[Daytona] ERROR: {name} container readiness check timed out after {stopwatch.Elapsed.TotalSeconds:F1}s");
+            Console.WriteLine($"[Daytona] ERROR: {ex.Message}");
+            throw new TimeoutException($"{name} container readiness check timed out. The container started but did not become ready within {ContainerOperationTimeout.TotalMinutes} minutes. Check that the wait strategy is correct for this container.", ex);
         }
     }
 
