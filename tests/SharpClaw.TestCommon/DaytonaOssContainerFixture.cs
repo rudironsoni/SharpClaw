@@ -53,7 +53,6 @@ public sealed class DaytonaOssContainerFixture : IAsyncLifetime, IAsyncDisposabl
     private readonly IContainer _dind;
     private IContainer _daytonaRunner;
     private IContainer _daytonaProxy;
-    private DotNet.Testcontainers.Images.IFutureDockerImage? _runnerCustomImage;
     private readonly int _apiPort;
     private readonly string _healthPath;
     private readonly string _encryptionKey;
@@ -305,7 +304,7 @@ staticPasswords:
 
         try
         {
-            Console.WriteLine("[Daytona] Creating network...");
+            Console.WriteLine("[Daytona] Creating network");
             using (var networkCts = new CancellationTokenSource(ContainerOperationTimeout))
             {
                 await _network.CreateAsync(networkCts.Token);
@@ -372,7 +371,7 @@ staticPasswords:
 
     private static async Task StartContainerWithTimeoutAsync(IContainer container, string name)
     {
-        Console.WriteLine($"[Daytona] Starting {name} container...");
+        Console.WriteLine($"[Daytona] Starting {name} container");
         var stopwatch = Stopwatch.StartNew();
 
         try
@@ -397,11 +396,11 @@ staticPasswords:
 
     private async Task<IContainer> BuildRunnerContainerWithTimeoutAsync()
     {
-        Console.WriteLine("[Daytona] Building custom runner image...");
+        Console.WriteLine("[Daytona] Building custom runner image");
         try
         {
             using var cts = new CancellationTokenSource(ContainerOperationTimeout);
-            var runnerContainer = await BuildRunnerContainerWithTokenAsync(cts.Token);
+            var runnerContainer = await BuildRunnerContainerWithTokenAsync();
             Console.WriteLine("[Daytona] Custom runner image built successfully");
             return runnerContainer;
         }
@@ -414,7 +413,7 @@ staticPasswords:
 
     private async Task EnsureRunnerReadyWithTimeoutAsync()
     {
-        Console.WriteLine("[Daytona] Waiting for runner to be ready...");
+        Console.WriteLine("[Daytona] Waiting for runner to be ready");
         var deadline = DateTimeOffset.UtcNow + _readyTimeout;
         Exception? lastError = null;
 
@@ -452,7 +451,7 @@ staticPasswords:
 
     private async Task EnsureProxyReadyWithTimeoutAsync()
     {
-        Console.WriteLine("[Daytona] Waiting for proxy to be ready...");
+        Console.WriteLine("[Daytona] Waiting for proxy to be ready");
         var host = _daytonaProxy.Hostname;
         var mappedPort = _daytonaProxy.GetMappedPublicPort(DefaultProxyPort);
         var uri = new UriBuilder("http", host, mappedPort, "/health").Uri;
@@ -523,19 +522,6 @@ staticPasswords:
         await StopAndDisposeAsync(_minio, "MinIO", errors);
         await StopAndDisposeAsync(_redis, "Redis", errors);
         await StopAndDisposeAsync(_postgres, "Postgres", errors);
-
-        // Dispose custom runner image
-        if (_runnerCustomImage is IAsyncDisposable asyncDisposableImage)
-        {
-            try
-            {
-                await asyncDisposableImage.DisposeAsync();
-            }
-            catch (Exception ex)
-            {
-                errors.Add(new InvalidOperationException("Failed to dispose custom runner image.", ex));
-            }
-        }
 
         if (_networkCreated)
         {
@@ -618,12 +604,12 @@ staticPasswords:
             .Build();
     }
 
-    private async Task<IContainer> BuildRunnerContainerWithTokenAsync(CancellationToken cancellationToken)
+    private async Task<IContainer> BuildRunnerContainerWithTokenAsync()
     {
         var runnerImage = Environment.GetEnvironmentVariable("SHARPCLAW_DAYTONA_RUNNER_IMAGE") ?? DefaultRunnerImage;
         var apiUrl = $"http://daytona-api:{_apiPort}/api";
 
-        Console.WriteLine($"[Daytona] Creating runner container with env vars only (no .env file)...");
+        Console.WriteLine($"[Daytona] Creating runner container with env vars only (no .env file)");
 
         // Use base image directly with environment variables only
         return new ContainerBuilder(runnerImage)
