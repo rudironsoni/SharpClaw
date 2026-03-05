@@ -643,11 +643,14 @@ staticPasswords:
         Console.WriteLine($"[Daytona] DIAGNOSTIC: File exists: {File.Exists(envFilePath)}");
         Console.WriteLine($"[Daytona] DIAGNOSTIC: File size: {new FileInfo(envFilePath).Length} bytes");
 
-        // Create custom Dockerfile with baked-in .env file
+        // Create custom Dockerfile with baked-in .env file and verification
         var dockerfileContent = $@"FROM {runnerImage}
 WORKDIR /config
 COPY .env /config/.env
-";
+RUN echo 'Verifying .env file exists during build:' && ls -la /config/
+RUN echo 'Contents of /config/.env:' && cat /config/.env || echo 'FILE NOT FOUND'
+RUN echo 'Setting permissions:' && chmod 644 /config/.env
+"
 
         var dockerfilePath = Path.Combine(_runnerEnvDir, "Dockerfile");
         File.WriteAllText(dockerfilePath, dockerfileContent);
