@@ -14,9 +14,9 @@
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     
-    <!-- AOT Compatibility - only for .NET 8+ projects -->
-    <IsAotCompatible Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</IsAotCompatible>
-    <EnableTrimAnalyzer Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</EnableTrimAnalyzer>
+    <!-- AOT Compatibility - only for .NET 8+ projects, skip analyzers -->
+    <IsAotCompatible Condition="'$(IsAotCompatible)' == '' And '$(IsRoslynComponent)' != 'true'">true</IsAotCompatible>
+    <EnableTrimAnalyzer Condition="'$(EnableTrimAnalyzer)' == '' And '$(IsRoslynComponent)' != 'true'">true</EnableTrimAnalyzer>
     
     <!-- Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
