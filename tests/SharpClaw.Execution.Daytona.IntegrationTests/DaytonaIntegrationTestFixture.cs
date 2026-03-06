@@ -66,11 +66,12 @@ public class DaytonaIntegrationTestFixture : IAsyncLifetime
         // Create network
         _network = new NetworkBuilder()
             .Build();
+
+        await _network.CreateAsync();
         await _network.CreateAsync();
         
         // Start Daytona API container
-        _daytonaApi = new ContainerBuilder()
-            .WithImage("daytonaio/daytona:latest")
+        _daytonaApi = new ContainerBuilder("daytonaio/daytona:latest")
             .WithNetwork(_network)
             .WithPortBinding(3000, true)
             .WithEnvironment("API_KEY", "test-key-123")
@@ -80,8 +81,7 @@ public class DaytonaIntegrationTestFixture : IAsyncLifetime
         Console.WriteLine("[Daytona] API container started");
         
         // Start Daytona Runner container
-        _daytonaRunner = new ContainerBuilder()
-            .WithImage("daytonaio/daytona:latest")
+        _daytonaRunner = new ContainerBuilder("daytonaio/daytona:latest")
             .WithNetwork(_network)
             .WithPortBinding(3001, true)
             .WithEnvironment("API_URL", "http://daytona-api:3000/api")
@@ -141,6 +141,7 @@ public class DaytonaIntegrationTestFixture : IAsyncLifetime
         {
             return _httpClient!;
         }
+
         throw new InvalidOperationException("HTTP client only available in cloud mode");
     }
 }

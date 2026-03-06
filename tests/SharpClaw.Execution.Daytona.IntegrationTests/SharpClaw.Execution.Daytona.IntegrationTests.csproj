@@ -17,7 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SharpClaw.Core\SharpClaw.Core.csproj" />
     <ProjectReference Include="..\..\src\SharpClaw.Execution.Daytona\SharpClaw.Execution.Daytona.csproj" />
   </ItemGroup>
 
