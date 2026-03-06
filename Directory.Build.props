@@ -20,7 +20,7 @@
     
     <!-- Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591;IL2026;IL3050</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;IL2026;IL3050;NETSDK1212</NoWarn>
     
     <!-- TODO: Remove IL2026 and IL3050 once source generators are implemented for AOT compatibility -->
     <!-- These warnings are suppressed for P0 Foundation - will be properly fixed with JsonSerializerContext source generators in P1 -->
