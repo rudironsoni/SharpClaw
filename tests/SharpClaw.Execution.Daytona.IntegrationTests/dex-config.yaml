@@ -1,0 +1,19 @@
+issuer: http://dex:5556/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+staticClients:
+  - id: daytona
+    redirectURIs:
+      - http://localhost:3000/api/oauth2-redirect.html
+    name: Daytona
+    secret: test-client-secret
+oauth2:
+  skipApprovalScreen: true
+enablePasswordDB: true
+staticPasswords:
+  - email: dev@daytona.io
+    hash: JDJhJDEwJDJaSEl6djVEeHd4MGVQanlNdWNzQXF4RW1VWHdMbTJOUm02Q3RWMlJTbHNvdUxOZnhrQkN5
+    username: dev
+    userID: "1"
