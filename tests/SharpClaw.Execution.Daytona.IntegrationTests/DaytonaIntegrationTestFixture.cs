@@ -85,4 +85,6 @@ public sealed class DaytonaIntegrationTestFixture : IAsyncLifetime
     }
 
     public string GetApiBaseUrl() => "http://localhost:3000";
+
+    public HttpClient GetHttpClient() => new HttpClient();
 }
