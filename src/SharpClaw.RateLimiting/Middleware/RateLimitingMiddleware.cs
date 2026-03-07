@@ -1,8 +1,8 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharpClaw.RateLimiting.Abstractions;
-using SharpClaw.Tenancy;
 
 namespace SharpClaw.RateLimiting.Middleware;
 
@@ -12,20 +12,23 @@ namespace SharpClaw.RateLimiting.Middleware;
 public sealed class RateLimitingMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly IRateLimiter _rateLimiter;
+    private readonly IRateLimiter _legacyRateLimiter;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly RateLimiterOptions _options;
+    private readonly RateLimitingFeatureFlags _featureFlags;
     
     public RateLimitingMiddleware(
         RequestDelegate next,
         IRateLimiter rateLimiter,
         ILogger<RateLimitingMiddleware> logger,
-        IOptions<RateLimiterOptions> options)
+        IOptions<RateLimiterOptions> options,
+        RateLimitingFeatureFlags featureFlags)
     {
         _next = next;
-        _rateLimiter = rateLimiter;
+        _legacyRateLimiter = rateLimiter;
         _logger = logger;
         _options = options.Value;
+        _featureFlags = featureFlags;
     }
     
     public async Task InvokeAsync(HttpContext context)
@@ -37,10 +40,33 @@ public sealed class RateLimitingMiddleware
             return;
         }
         
-        // Get key based on device ID or IP address
+        // Log migration metrics if enabled
+        if (_featureFlags.LogMigrationMetrics)
+        {
+            _logger.LogDebug(
+                "Rate limiting mode: {Mode} for {Path}",
+                _featureFlags.UseNewRateLimiting ? "System.Threading.RateLimiting" : "Legacy",
+                context.Request.Path);
+        }
+        
+        if (_featureFlags.UseNewRateLimiting)
+        {
+            // Use new System.Threading.RateLimiting via endpoint middleware
+            // The actual rate limiting is handled by AddRateLimiter pipeline
+            await _next(context);
+        }
+        else
+        {
+            // Use legacy rate limiting
+            await InvokeLegacyRateLimiting(context);
+        }
+    }
+    
+    private async Task InvokeLegacyRateLimiting(HttpContext context)
+    {
         var key = GetRateLimitKey(context);
         
-        var lease = await _rateLimiter.AcquireAsync(key, 1, context.RequestAborted);
+        var lease = await _legacyRateLimiter.AcquireAsync(key, 1, context.RequestAborted);
         
         if (!lease.IsAcquired)
         {
@@ -71,7 +97,11 @@ public sealed class RateLimitingMiddleware
         var deviceId = context.User?.Identity?.Name;
         if (!string.IsNullOrEmpty(deviceId))
         {
-            var tenantId = AsyncLocalTenantContext.Current?.TenantId ?? "default";
+            // Get tenant ID from HttpContext.Items (set by middleware earlier in pipeline)
+            // Falls back to "default" if not explicitly set
+            var tenantId = context.Items.TryGetValue("TenantId", out var tenantIdValue) 
+                ? tenantIdValue?.ToString() ?? "default"
+                : "default";
             return $"{tenantId}:{deviceId}";
         }
         

@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Threading.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SharpClaw.RateLimiting.Abstractions;
 using SharpClaw.RateLimiting.Stores;
 using SharpClaw.RateLimiting.Strategies;

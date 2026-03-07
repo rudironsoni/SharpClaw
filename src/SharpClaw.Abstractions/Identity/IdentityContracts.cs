@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 
 namespace SharpClaw.Abstractions.Identity;
 
@@ -77,4 +78,24 @@ public static class ScopeRequirements
     {
         return RequiredScopeByMethod.TryGetValue(method, out var scope) ? scope : null;
     }
+}
+
+/// <summary>
+/// Token service for generating and validating authentication tokens.
+/// </summary>
+public interface ITokenService
+{
+    /// <summary>
+    /// Generates a JWT token for the specified device identity.
+    /// </summary>
+    /// <param name="device">The device identity to generate a token for.</param>
+    /// <returns>A JWT token string.</returns>
+    string GenerateToken(DeviceIdentity device);
+
+    /// <summary>
+    /// Validates a JWT token and returns the claims principal if valid.
+    /// </summary>
+    /// <param name="token">The JWT token to validate.</param>
+    /// <returns>The claims principal if the token is valid, otherwise null.</returns>
+    ClaimsPrincipal? ValidateToken(string token);
 }

@@ -44,14 +44,45 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Run ALL tests
+      - name: Run ALL tests with coverage
         run: |
           mkdir -p TestResults
           dotnet test --configuration Release \
             --logger "trx;LogFileName=test-results.trx" \
             --results-directory TestResults \
             --blame-hang-timeout 30m \
-            --blame-crash
+            --blame-crash \
+            --collect:"XPlat Code Coverage" \
+            --settings coverlet.runsettings
+
+      - name: Check code coverage threshold
+        run: |
+          echo "## Code Coverage" >> $GITHUB_STEP_SUMMARY
+          coverage_files=$(find TestResults -name "coverage.cobertura.xml" -type f)
+          if [ -n "$coverage_files" ]; then
+            total_lines=0
+            covered_lines=0
+            for file in $coverage_files; do
+              file_covered=$(grep -oP 'line-rate="\K[0-9.]+' "$file" | head -1)
+              file_lines=$(grep -oP 'lines-valid="\K[0-9]+' "$file" | head -1)
+              if [ -n "$file_covered" ] && [ -n "$file_lines" ]; then
+                covered_lines=$(echo "$covered_lines + ($file_lines * $file_covered)" | bc)
+                total_lines=$(echo "$total_lines + $file_lines" | bc)
+              fi
+            done
+            if [ "$total_lines" -gt 0 ]; then
+              coverage_percent=$(echo "scale=2; ($covered_lines / $total_lines) * 100" | bc)
+              echo "**Overall Coverage:** ${coverage_percent}%" >> $GITHUB_STEP_SUMMARY
+              
+              # Check 80% threshold
+              if (( $(echo "$coverage_percent < 80" | bc -l) )); then
+                echo "::error::Code coverage ${coverage_percent}% is below 80% threshold"
+                exit 1
+              fi
+            fi
+          else
+            echo "No coverage files found" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload test results
         if: always()

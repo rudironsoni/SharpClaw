@@ -11,3 +11,22 @@
 **/.dockerignore
 **/README.md
 **/LICENSE
+
+# Documentation
+docs/
+*.md
+
+# Tests and CI
+tests/
+.github/
+azure-pipelines.yml
+
+# Development
+.env
+.env.*
+.nuget/
+*.nupkg
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -214,7 +214,8 @@ public sealed class GatewayDispatcher : IDisposable
                 // This is a hook point for WebSocket delivery
                 _logger.LogDebug("Streaming event {EventType} to connection {ConnectionId}", evt.Event, connectionId);
 
-                // TODO: Integrate with actual WebSocket send
+                // TODO: [#42] Integrate with actual WebSocket send
+                // See: https://github.com/rudironsoni/SharpClaw/issues/42
                 // await _webSocket.SendAsync(...);
             }
         }
@@ -504,9 +505,9 @@ public static class GatewayMethodRegistration
                 await dispatcher.PublishEventAsync($"runs.{runId}", eventFrame).ConfigureAwait(false);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Background forwarding stopped
+            _logger.LogError(ex, "Background event forwarding failed for run {RunId}", runId);
         }
     }
 

@@ -134,6 +134,33 @@ csharp_style_throw_expression = true:suggestion
 csharp_style_unused_value_assignment_preference = discard_variable:suggestion
 csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
 
+# Code quality analyzers
+[*.cs]
+# CA1822: Mark static - suggest making methods static when possible
+dotnet_diagnostic.CA1822.severity = suggestion
+
+# CA2007: ConfigureAwait - suggest using ConfigureAwait in library code
+dotnet_diagnostic.CA2007.severity = suggestion
+
+# CA1727: PascalCase for named placeholders - ensure naming conventions
+dotnet_diagnostic.CA1727.severity = warning
+
+# Async best practices
+dotnet_diagnostic.CA2012.severity = warning  # Use ValueTasks correctly
+dotnet_diagnostic.VSTHRD002.severity = warning  # Avoid problematic synchronous waits
+
+# Performance analyzers
+dotnet_diagnostic.CA1825.severity = suggestion  # Avoid zero-length array allocations
+dotnet_diagnostic.CA1836.severity = suggestion  # Prefer IsEmpty over Count
+dotnet_diagnostic.CA1848.severity = suggestion  # Use LoggerMessage delegates
+
+# Security analyzers
+dotnet_diagnostic.CA2100.severity = warning  # Review SQL queries for security
+dotnet_diagnostic.CA5351.severity = warning  # Do not use broken cryptographic algorithms
+
+# Reliability analyzers
+dotnet_diagnostic.CA2016.severity = warning  # Forward CancellationToken parameter
+
 # Using directive preferences
 csharp_using_directive_placement = outside_namespace:warning
 

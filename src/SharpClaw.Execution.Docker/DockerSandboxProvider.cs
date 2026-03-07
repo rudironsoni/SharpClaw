@@ -2,6 +2,7 @@ using Docker.DotNet;
 using Docker.DotNet.Models;
 using Microsoft.Extensions.Logging;
 using SharpClaw.Execution.Abstractions;
+using System.IO;
 
 namespace SharpClaw.Execution.Docker;
 
@@ -28,6 +29,51 @@ public sealed class DockerSandboxProvider : ISandboxProvider, IDisposable
         _client = new DockerClientConfiguration(new Uri(dockerUri)).CreateClient();
 
         _logger.LogInformation("Docker sandbox provider initialized with URI: {Uri}", dockerUri);
+    }
+
+    private void ValidateSecurityOptions()
+    {
+        // Validate Seccomp profile path if specified
+        if (!string.IsNullOrEmpty(_options.SeccompProfile))
+        {
+            if (!File.Exists(_options.SeccompProfile))
+            {
+                throw new ArgumentException(
+                    $"Seccomp profile file not found: {_options.SeccompProfile}. " +
+                    "Ensure the file exists and the path is correct.",
+                    nameof(_options.SeccompProfile));
+            }
+
+            // Validate file is readable
+            try
+            {
+                File.OpenRead(_options.SeccompProfile).Dispose();
+            }
+            catch (Exception ex)
+            {
+                throw new ArgumentException(
+                    $"Seccomp profile file is not readable: {_options.SeccompProfile}",
+                    nameof(_options.SeccompProfile),
+                    ex);
+            }
+
+            _logger.LogInformation("Using seccomp profile: {Profile}", _options.SeccompProfile);
+        }
+
+        // Validate AppArmor profile if specified
+        if (!string.IsNullOrEmpty(_options.AppArmorProfile))
+        {
+            // Check if AppArmor is enabled on the system
+            var appArmorPath = "/sys/kernel/security/apparmor";
+            if (!Directory.Exists(appArmorPath))
+            {
+                throw new InvalidOperationException(
+                    "AppArmor is not enabled on this system. " +
+                    "Cannot use AppArmor profiles without kernel support.");
+            }
+
+            _logger.LogInformation("Using AppArmor profile: {Profile}", _options.AppArmorProfile);
+        }
     }
 
     public async Task<SandboxHandle> StartAsync(CancellationToken cancellationToken = default)
@@ -57,6 +103,9 @@ public sealed class DockerSandboxProvider : ISandboxProvider, IDisposable
 
             _logger.LogInformation("Image {Image} pulled successfully", image);
         }
+
+        // Validate security options before applying
+        ValidateSecurityOptions();
 
         var securityOpts = new List<string> { "no-new-privileges:true" };
         if (!string.IsNullOrEmpty(_options.SeccompProfile))

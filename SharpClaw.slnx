@@ -68,6 +68,6 @@
     <Project Path="tests/SharpClaw.Web.UnitTests/SharpClaw.Web.UnitTests.csproj" />
     <Project Path="tests/SharpClaw.Compliance.UnitTests/SharpClaw.Compliance.UnitTests.csproj" />
     <!-- Analyzer test project excluded due to NuGet version conflicts - tests are written but require package updates to build -->
-    <!-- <Project Path="tests/SharpClaw.Compliance.Analyzers.Tests/SharpClaw.Compliance.Analyzers.Tests.csproj" /> -->
+    <Project Path="tests/SharpClaw.Compliance.Analyzers.Tests/SharpClaw.Compliance.Analyzers.Tests.csproj" />
   </Folder>
 </Solution>
