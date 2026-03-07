@@ -14,9 +14,8 @@
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     
-    <!-- AOT Compatibility - only for .NET 8+ projects -->
-    <IsAotCompatible Condition="'$(IsAotCompatible)' == '' And $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</IsAotCompatible>
-    <EnableTrimAnalyzer Condition="'$(EnableTrimAnalyzer)' == '' And $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</EnableTrimAnalyzer>
+    <!-- AOT Compatibility - opt-in per project, do not set globally -->
+    <!-- Projects targeting net8.0+ can set: <IsAotCompatible>true</IsAotCompatible> -->
     
     <!-- Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

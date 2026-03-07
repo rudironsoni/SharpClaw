@@ -26,12 +26,6 @@
         "resolved": "10.0.0-preview.25076.4",
         "contentHash": "4Ld4QgMB5zSebEZUEXNbage6/bP+lMeVzmv4y4HfdIPxNCebsQ44p77dr0abjL4quWFEBxo0rMH8ULktfkcW6w=="
       },
-      "Microsoft.NET.ILLink.Tasks": {
-        "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "0B6nZyCHWXnvmlB559oduOspVdNOnpNXPjhpWVMovLPAsDVG7A4jJR9rzECf67JUzxP8/ee/wA8clwIzJcWNFA=="
-      },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
         "requested": "[17.13.0, )",

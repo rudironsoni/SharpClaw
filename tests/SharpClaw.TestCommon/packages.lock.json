@@ -41,12 +41,6 @@
         "resolved": "9.3.0",
         "contentHash": "OcMro0DFeVm31Np9B8CzPUKh8zO1902dY+K2YbzjheyaTvwcCTA6YMU6ChiKAUeWAzJENgWW0weWYAbyu4utZw=="
       },
-      "Microsoft.NET.ILLink.Tasks": {
-        "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "0B6nZyCHWXnvmlB559oduOspVdNOnpNXPjhpWVMovLPAsDVG7A4jJR9rzECf67JUzxP8/ee/wA8clwIzJcWNFA=="
-      },
       "NSubstitute": {
         "type": "Direct",
         "requested": "[5.3.0, )",
