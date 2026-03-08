@@ -28,7 +28,7 @@ public static class ServiceCollectionExtensions
         }
         
         services.AddSingleton<IRateLimitStore, MemoryRateLimitStore>();
-        services.AddSingleton<IRateLimiter, TokenBucketRateLimiter>();
+        services.AddSingleton<Abstractions.IRateLimiter, Abstractions.TokenBucketRateLimiter>();
         
         return services;
     }
@@ -50,7 +50,7 @@ public static class ServiceCollectionExtensions
         }
         
         services.AddSingleton<IRateLimitStore, TStore>();
-        services.AddSingleton<IRateLimiter, TokenBucketRateLimiter>();
+        services.AddSingleton<Abstractions.IRateLimiter, Abstractions.TokenBucketRateLimiter>();
         
         return services;
     }
