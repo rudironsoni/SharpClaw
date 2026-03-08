@@ -28,6 +28,11 @@ public sealed class MemoryRateLimitStore : IRateLimitStore, IDisposable
         });
     }
     
+    public T GetOrCreate<T>(string key, Func<T> factory) where T : class
+    {
+        return (T)_buckets.GetOrAdd(key, _ => factory() as RateLimitBucket);
+    }
+    
     public bool TryRemoveBucket(string key)
     {
         return _buckets.TryRemove(key, out _);
