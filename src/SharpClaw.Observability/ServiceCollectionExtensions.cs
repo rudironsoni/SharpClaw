@@ -75,7 +75,7 @@ public static class ServiceCollectionExtensions
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddMeter("SharpClaw.Metrics")
-                    .AddPrometheusExporter();
+                    .AddOtlpExporter();
             });
 
         // Health Checks
@@ -95,8 +95,7 @@ public static class ServiceCollectionExtensions
         // Add correlation ID middleware first
         app.UseMiddleware<CorrelationIdMiddleware>();
 
-        // Add OpenTelemetry Prometheus metrics endpoint
-        app.UseOpenTelemetryPrometheusScrapingEndpoint();
+        // OTLP exporter configured in AddSharpClawObservability() - no additional middleware needed
 
         // Map health check endpoints
         app.UseEndpoints(endpoints =>

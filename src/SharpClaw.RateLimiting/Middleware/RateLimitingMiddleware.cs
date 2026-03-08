@@ -110,7 +110,7 @@ public sealed class RateLimitingMiddleware
         return $"ip:{ipAddress}";
     }
     
-    private static int GetRetryAfterSeconds(RateLimitLease lease)
+    private static int GetRetryAfterSeconds(Abstractions.RateLimitLease lease)
     {
         if (lease.RetryAfter is TimeSpan retryAfter)
         {
