@@ -11,6 +11,11 @@ public interface IRateLimitStore
     RateLimitBucket GetOrCreateBucket(string key, TokenBucketOptions options);
     
     /// <summary>
+    /// Gets or creates an entry using a factory function.
+    /// </summary>
+    T GetOrCreate<T>(string key, Func<T> factory) where T : class;
+    
+    /// <summary>
     /// Attempts to remove a bucket.
     /// </summary>
     bool TryRemoveBucket(string key);
