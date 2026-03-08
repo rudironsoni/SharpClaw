@@ -1,8 +1,3 @@
-Please also reference the following rules as needed. The list below is provided in TOON format, and `@` stands for the project root directory.
-
-rules[1]{path}:
-  @.codex/memories/40-mcp-and-tooling.md
-
 # dotnet-agent-harness
 
 Comprehensive .NET development guidance for modern C#, ASP.NET Core, MAUI, Blazor, and cloud-native apps.
