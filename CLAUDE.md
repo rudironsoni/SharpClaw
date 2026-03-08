@@ -36,8 +36,8 @@ Comprehensive .NET development guidance for modern C#, ASP.NET Core, MAUI, Blazo
 
 This toolkit provides:
 
-- 189 skills
-- 15 specialist agents/subagents
+- 193 skills
+- 18 specialist agents/subagents
 - shared RuleSync rules, commands, hooks, and MCP config
 
 Compatible targets include:
@@ -56,15 +56,14 @@ rules.
 
 ## Recommended install
 
-Prefer the local runtime tool when this repository is installed into another .NET codebase:
+Use RuleSync to install this toolkit in your repository:
 
 ```bash
-dotnet new tool-manifest
-dotnet tool install Rudironsoni.DotNetAgentHarness
-dotnet agent-harness bootstrap --targets claudecode,opencode,codexcli,geminicli,copilot,antigravity,factorydroid --run-rulesync
+rulesync fetch rudironsoni/dotnet-agent-harness:.rulesync
+rulesync generate --targets "claudecode,codexcli,opencode,geminicli,antigravity,copilot,factorydroid" --features "*"
 ```
 
-RuleSync-only installation still works:
+Declarative installation:
 
 ```bash
 rulesync fetch rudironsoni/dotnet-agent-harness:.rulesync
@@ -130,8 +129,7 @@ See [Verification README](verification/README.md) for detailed verification stra
 If RuleSync reports `Multiple root rulesync rules found`, ensure only one root overview rule exists in
 `.rulesync/rules/`.
 
-If `dotnet-agent-harness:*` commands are available, prefer executing the local runtime command
-(`dotnet agent-harness ...`) instead of manually reproducing catalog, prompt, incident, or graph logic from source
+Use RuleSync commands directly instead of manually reproducing catalog, prompt, incident, or graph logic from source
 files.
 
 ## Contributing
