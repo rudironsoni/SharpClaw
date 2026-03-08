@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using SharpClaw.Execution.Abstractions;
 using SharpClaw.Extensions.Hosting;
 using SharpClaw.HttpApi;
+using SharpClaw.Host;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,14 +26,14 @@ var app = builder.Build();
 // Security headers middleware
 app.UseHsts();
 app.UseXContentTypeOptions();
-app.UseReferrerPolicy(opts => opts.NoReferrer());
-app.UseXXssProtection(opts => opts.EnabledWithBlockMode());
+app.UseReferrerPolicy();
+app.UseXXssProtection();
 
 app.MapSharpClawHttpApiEndpoints();
 
 // Map health check endpoints with configurable path
-var healthCheckOptions = builder.Configuration.GetSection("HealthChecks").Get<HealthCheckOptions>() ?? new HealthCheckOptions();
-app.MapHealthChecks(healthCheckOptions.Path, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+var healthCheckPath = builder.Configuration.GetValue<string>("HealthChecks:Path") ?? "/health";
+app.MapHealthChecks(healthCheckPath, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     ResponseWriter = async (context, report) =>
     {

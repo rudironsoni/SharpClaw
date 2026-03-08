@@ -1,11 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpClaw.Execution.Docker;
+using SharpClaw.TestCommon;
 
 namespace SharpClaw.Execution.Docker.UnitTests;
 
 public class DockerSandboxProviderUnitTests
 {
-    [Fact]
+    [DockerAvailable]
     public void Name_IsDind()
     {
         var provider = new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance);
@@ -13,7 +14,7 @@ public class DockerSandboxProviderUnitTests
         Assert.Equal("dind", provider.Name);
     }
 
-    [Fact]
+    [DockerAvailable]
     public async Task StartAsync_ReturnsDindPrefixedHandle()
     {
         var provider = new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance);
@@ -24,7 +25,7 @@ public class DockerSandboxProviderUnitTests
         Assert.StartsWith("dind-", handle.SandboxId, StringComparison.Ordinal);
     }
 
-    [Fact]
+    [DockerAvailable]
     public async Task StartAsync_RespectsCancellation()
     {
         var provider = new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance);

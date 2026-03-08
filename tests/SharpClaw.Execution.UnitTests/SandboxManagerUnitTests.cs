@@ -3,12 +3,13 @@ using SharpClaw.Execution.Abstractions;
 using SharpClaw.Execution.Docker;
 using SharpClaw.Execution.Podman;
 using SharpClaw.Execution.SandboxManager;
+using SharpClaw.TestCommon;
 
 namespace SharpClaw.Execution.UnitTests;
 
 public class SandboxManagerUnitTests
 {
-    [Fact]
+    [DockerAvailable]
     public async Task StartSandboxAsync_UsesSelectedProvider()
     {
         var manager = new SandboxManagerService(
@@ -22,7 +23,7 @@ public class SandboxManagerUnitTests
         Assert.True(manager.IsActive(runId));
     }
 
-    [Fact]
+    [DockerAvailable]
     public async Task StopSandboxAsync_RemovesActiveHandle()
     {
         var manager = new SandboxManagerService(

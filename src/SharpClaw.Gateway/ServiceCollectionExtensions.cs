@@ -14,10 +14,13 @@ public static class GatewayServiceCollectionExtensions
     {
         // Register metrics
         services.AddSingleton<GatewayMetrics>();
-        
-        // Register gateway core
-        services.AddScoped<IGatewayCore, GatewayCore>();
-        
+
+        // Register gateway dispatcher
+        services.AddSingleton<GatewayDispatcher>();
+
+        // Register connection registry
+        services.AddSingleton<ConnectionRegistry>();
+
         return services;
     }
 }

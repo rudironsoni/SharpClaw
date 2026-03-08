@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Configuration;
 using SharpClaw.Abstractions.Identity;
 using Xunit;
@@ -47,8 +48,10 @@ public class JwtTokenServiceTests
         };
 
         var token = _tokenService.GenerateToken(device);
+        var handler = new JwtSecurityTokenHandler();
+        var jwtToken = handler.ReadJwtToken(token);
 
-        Assert.Contains("device-123", token);
+        Assert.Equal("device-123", jwtToken.Subject);
     }
 
     [Fact]
@@ -62,8 +65,10 @@ public class JwtTokenServiceTests
         };
 
         var token = _tokenService.GenerateToken(device);
+        var handler = new JwtSecurityTokenHandler();
+        var jwtToken = handler.ReadJwtToken(token);
 
-        Assert.Contains("tenant-456", token);
+        Assert.Equal("tenant-456", jwtToken.Claims.First(c => c.Type == "tenant_id").Value);
     }
 
     [Fact]
@@ -102,18 +107,22 @@ public class JwtTokenServiceTests
     [Fact]
     public void GenerateToken_WithLongDeviceId_WorksCorrectly()
     {
+        var longDeviceId = new string('a', 1000);
+        var longTenantId = new string('b', 1000);
         var device = new DeviceIdentity
         {
-            DeviceId = new string('a', 1000),
-            TenantId = new string('b', 1000),
+            DeviceId = longDeviceId,
+            TenantId = longTenantId,
             IsPaired = true
         };
 
         var token = _tokenService.GenerateToken(device);
+        var handler = new JwtSecurityTokenHandler();
+        var jwtToken = handler.ReadJwtToken(token);
 
         Assert.NotNull(token);
-        Assert.Contains(new string('a', 1000), token);
-        Assert.Contains(new string('b', 1000), token);
+        Assert.Equal(longDeviceId, jwtToken.Subject);
+        Assert.Equal(longTenantId, jwtToken.Claims.First(c => c.Type == "tenant_id").Value);
     }
 
     [Fact]

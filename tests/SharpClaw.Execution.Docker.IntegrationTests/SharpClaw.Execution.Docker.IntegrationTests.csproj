@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SharpClaw.Execution.Docker\SharpClaw.Execution.Docker.csproj" />
     <ProjectReference Include="..\..\src\SharpClaw.Execution.SandboxManager\SharpClaw.Execution.SandboxManager.csproj" />
+    <ProjectReference Include="..\SharpClaw.TestCommon\SharpClaw.TestCommon.csproj" />
   </ItemGroup>
 
 </Project>

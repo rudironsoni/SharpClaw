@@ -27,11 +27,12 @@ public sealed class TokenBucketRateLimiter : IRateLimiter
             ReplenishTokens(entry);
 
             if (entry.Tokens >= permitCount)
-        {
-            entry.Tokens -= permitCount;
-            return new TokenBucketLease(true, null);
-        }
-        return new TokenBucketLease(false, CalculateRetryAfter(entry));
+            {
+                entry.Tokens -= permitCount;
+                return new TokenBucketLease(true, null);
+            }
+
+            return new TokenBucketLease(false, CalculateRetryAfter(entry));
         }
     }
 
@@ -78,7 +79,10 @@ public sealed class TokenBucketRateLimiter : IRateLimiter
 
     private TimeSpan? CalculateRetryAfter(TokenBucketEntry entry)
     {
-        if (entry.Tokens >= 1) return null;
+        if (entry.Tokens >= 1)
+        {
+            return null;
+        }
 
         var tokensNeeded = 1 - entry.Tokens;
         var periodsNeeded = (long)Math.Ceiling(tokensNeeded / (double)_options.TokensPerPeriod);

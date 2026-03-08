@@ -234,11 +234,3 @@ public static class IdentityErrors
     public const string AlreadyPaired = "ALREADY_PAIRED";
     public const string AlreadyExists = "ALREADY_EXISTS";
 }
-
-/// <summary>
-/// Token service interface.
-/// </summary>
-public interface ITokenService
-{
-    string GenerateToken(DeviceIdentity device);
-}

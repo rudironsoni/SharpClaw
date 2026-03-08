@@ -434,7 +434,7 @@ public class GatewayDispatcherEdgeCaseTests
             async (request, _, _) =>
             {
                 Interlocked.Increment(ref callCount);
-                await Task.Delay(10);
+                await Task.Delay(10, CancellationToken.None);
                 return new ResponseFrame(request.Id, true);
             });
 

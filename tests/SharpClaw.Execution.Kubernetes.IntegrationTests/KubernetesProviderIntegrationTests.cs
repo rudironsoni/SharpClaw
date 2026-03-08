@@ -15,6 +15,11 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
 
+        if (!_fixture.IsAvailable)
+        {
+            return;
+        }
+
         var policy = new KubernetesRuntimeClassPolicy(
             EnableKataForSensitive: false,
             DefaultRuntimeClass: "",
@@ -41,12 +46,18 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_UsesKubernetesWhenConfiguredAsDefault()
     {
+        if (!_fixture.IsAvailable)
+        {
+            return;
+        }
+
         ArgumentNullException.ThrowIfNull(_manager);
 
         var runId = Guid.NewGuid().ToString("N");
         var handle = await _manager.StartDefaultAsync(runId);
 
         Assert.Equal("kubernetes", handle.Provider);
+
         // Kubernetes provider generates sandbox IDs with "k8s--" prefix
         Assert.Matches(@"^k8s--[a-f0-9\-]+$", handle.SandboxId);
         Assert.True(_manager.IsActive(runId));
@@ -56,6 +67,11 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_RejectsDockerSocketMount()
     {
+        if (!_fixture.IsAvailable)
+        {
+            return;
+        }
+
         ArgumentNullException.ThrowIfNull(_manager);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -66,6 +82,11 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StartDefaultAsync_UsesKataRuntimeClass_ForSensitivePolicy()
     {
+        if (!_fixture.IsAvailable)
+        {
+            return;
+        }
+
         ArgumentNullException.ThrowIfNull(_manager);
 
         var runId = Guid.NewGuid().ToString("N");
@@ -79,6 +100,11 @@ public class KubernetesProviderIntegrationTests : IAsyncLifetime
     [Trait("Category", "ExternalInfrastructure")]
     public async Task StopAsync_CallsKubernetesApiToDeletePod()
     {
+        if (!_fixture.IsAvailable)
+        {
+            return;
+        }
+
         ArgumentNullException.ThrowIfNull(_manager);
 
         var runId = Guid.NewGuid().ToString("N");

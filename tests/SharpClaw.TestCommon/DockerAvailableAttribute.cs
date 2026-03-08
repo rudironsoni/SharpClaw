@@ -9,11 +9,12 @@ namespace SharpClaw.TestCommon;
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = false)]
 public class DockerAvailableAttribute : FactAttribute
 {
-    private static readonly Lazy<bool> IsDockerAvailable = new(() =>
+    private static readonly Lazy<(bool available, string? reason)> DockerStatus = new(() =>
     {
         try
         {
-            var process = new Process
+            // Check if Docker daemon is running
+            var versionProcess = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
@@ -25,21 +26,66 @@ public class DockerAvailableAttribute : FactAttribute
                     CreateNoWindow = true
                 }
             };
-            process.Start();
-            process.WaitForExit(5000);
-            return process.ExitCode == 0;
+            versionProcess.Start();
+            versionProcess.WaitForExit(5000);
+            if (versionProcess.ExitCode != 0)
+            {
+                return (false, "Docker daemon is not running");
+            }
+
+            // Check if alpine:latest image exists locally
+            var imagesProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "docker",
+                    Arguments = "images alpine:latest --format '{{.Repository}}'",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            imagesProcess.Start();
+            imagesProcess.WaitForExit(5000);
+            var output = imagesProcess.StandardOutput.ReadToEnd().Trim();
+            if (string.IsNullOrEmpty(output))
+            {
+                // Try to pull the image
+                var pullProcess = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "docker",
+                        Arguments = "pull alpine:latest",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+                pullProcess.Start();
+                pullProcess.WaitForExit(30000);
+                if (pullProcess.ExitCode != 0)
+                {
+                    return (false, "Docker alpine:latest image not available and could not be pulled");
+                }
+            }
+
+            return (true, null);
         }
-        catch
+        catch (Exception ex)
         {
-            return false;
+            return (false, $"Docker check failed: {ex.Message}");
         }
     });
 
     public DockerAvailableAttribute()
     {
-        if (!IsDockerAvailable.Value)
+        var status = DockerStatus.Value;
+        if (!status.available)
         {
-            Skip = "Docker is not available";
+            Skip = status.reason ?? "Docker is not available";
         }
     }
 }

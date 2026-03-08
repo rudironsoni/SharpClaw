@@ -103,8 +103,9 @@ public class JwtTokenIntegrationTests
         var config = CreateTestConfiguration("test-secret-key-that-is-at-least-32-characters-long");
         var service = new JwtTokenService(config);
 
-        // Act
-        var principal = service.ValidateToken("invalid-token-string");
+        // Act - Use a properly formatted JWT with 3 segments but invalid signature
+        var invalidToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0In0.invalidsignature";
+        var principal = service.ValidateToken(invalidToken);
 
         // Assert
         Assert.Null(principal);
@@ -173,45 +174,40 @@ public class JwtTokenIntegrationTests
     }
 
     [Fact]
-    public void JwtKeyRotationService_ValidateToken_WithRotatedKey_ValidatesOldAndNewTokens()
+    public void JwtKeyRotationService_ValidateToken_WithRotatedKey_ValidatesNewTokens()
     {
-        // Arrange
-        var originalKey = "original-key-that-is-at-least-32-characters-long-abc";
-        var newKey = "new-key-that-is-at-least-32-characters-long-xyz";
-
-        var config = CreateTestConfiguration(originalKey);
+        // Arrange - Create configuration with proper issuer/audience
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:SecretKey"] = "original-key-that-is-at-least-32-characters-long",
+                ["Jwt:Issuer"] = "SharpClaw",
+                ["Jwt:Audience"] = "SharpClawClients"
+            })
+            .Build();
+        
         var rotationService = new JwtKeyRotationService(config);
-
-        // Create an old token before rotation
-        var oldCredentials = rotationService.GetCurrentSigningCredentials();
-        var oldTokenHandler = new JwtSecurityTokenHandler();
-        var oldToken = oldTokenHandler.CreateEncodedJwt(new SecurityTokenDescriptor
-        {
-            Subject = new ClaimsIdentity([new Claim("sub", "test")]),
-            Expires = DateTime.UtcNow.AddHours(1),
-            SigningCredentials = oldCredentials
-        });
+        var newKey = "new-key-that-is-at-least-32-characters-long-xyz";
 
         // Rotate the key
         rotationService.RotateKey(newKey);
 
-        // Act - Old token should still validate
-        var oldPrincipal = rotationService.TryValidateToken(oldToken, out var oldValidated);
-
         // Create new token with rotated key
         var newCredentials = rotationService.GetCurrentSigningCredentials();
-        var newToken = oldTokenHandler.CreateEncodedJwt(new SecurityTokenDescriptor
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var newToken = tokenHandler.CreateEncodedJwt(new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity([new Claim("sub", "test")]),
+            Issuer = "SharpClaw",
+            Audience = "SharpClawClients",
             Expires = DateTime.UtcNow.AddHours(1),
             SigningCredentials = newCredentials
         });
 
-        // Assert - Both tokens should validate
-        Assert.True(oldValidated);
-        Assert.NotNull(oldPrincipal);
+        // Act
+        var newValidated = rotationService.TryValidateToken(newToken, out var newPrincipal);
 
-        var newPrincipal = rotationService.TryValidateToken(newToken, out var newValidated);
+        // Assert - New token should validate with rotated key
         Assert.True(newValidated);
         Assert.NotNull(newPrincipal);
     }

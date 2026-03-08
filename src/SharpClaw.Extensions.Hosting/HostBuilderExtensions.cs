@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharpClaw.Abstractions.Cloud;
@@ -17,9 +18,9 @@ using SharpClaw.Identity;
 using static SharpClaw.Identity.IdentityService;
 using SharpClaw.Persistence.Contracts.Entities;
 using SharpClaw.Persistence.Core;
+using SharpClaw.RateLimiting;
 using SharpClaw.RateLimiting.Abstractions;
 using SharpClaw.RateLimiting.Stores;
-using SharpClaw.RateLimiting.Strategies;
 using SharpClaw.Runs;
 using SharpClaw.Tenancy;
 using SharpClaw.Tenancy.Abstractions;
@@ -63,9 +64,16 @@ public static class HostBuilderExtensions
         builder.Services.AddScoped<IRepository<RunRecordEntity>, SharpClawDbContextRepository<RunRecordEntity>>();
         builder.Services.AddScoped<IRepository<IdempotencyKeyEntity>, SharpClawDbContextRepository<IdempotencyKeyEntity>>();
 
+        // Rate limiting options
+        builder.Services.AddSingleton(new RateLimiterOptions { TokensPerPeriod = 10, TokenLimit = 100 });
+
         // Identity
         builder.Services.AddScoped<IIdentityService, IdentityService>();
-        builder.Services.AddSingleton<ITokenService, JwtTokenService>(provider => new JwtTokenService());
+        builder.Services.AddSingleton<Abstractions.Identity.ITokenService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            return new JwtTokenService(config);
+        });
 
         // Gateway
         builder.Services.AddSingleton<ConnectionRegistry>();

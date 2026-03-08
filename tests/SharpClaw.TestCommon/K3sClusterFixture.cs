@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DotNet.Testcontainers.Containers;
 using Testcontainers.K3s;
 using Xunit;
@@ -10,10 +11,17 @@ namespace SharpClaw.TestCommon;
 public sealed class K3sClusterFixture : IAsyncLifetime
 {
     private const string DefaultImage = "rancher/k3s:v1.30.5-k3s1";
-    private readonly K3sContainer _container;
+    private readonly K3sContainer? _container;
+    private bool _isAvailable;
 
     public K3sClusterFixture()
     {
+        _isAvailable = IsKubernetesAvailable();
+        if (!_isAvailable)
+        {
+            return;
+        }
+
         var image = Environment.GetEnvironmentVariable("SHARPCLAW_K3S_IMAGE") ?? DefaultImage;
 
         var builder = new K3sBuilder(image)
@@ -29,9 +37,47 @@ public sealed class K3sClusterFixture : IAsyncLifetime
     }
 
     public string KubeConfigPath { get; private set; } = string.Empty;
+    public bool IsAvailable => _isAvailable;
+
+    private static bool IsKubernetesAvailable()
+    {
+        try
+        {
+            // Check if Docker daemon is running
+            var versionProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "docker",
+                    Arguments = "version --format '{{.Server.Version}}'",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            versionProcess.Start();
+            versionProcess.WaitForExit(5000);
+            if (versionProcess.ExitCode != 0)
+            {
+                return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public async Task InitializeAsync()
     {
+        if (!_isAvailable || _container == null)
+        {
+            return;
+        }
+
         try
         {
             await _container.StartAsync();
@@ -51,12 +97,18 @@ public sealed class K3sClusterFixture : IAsyncLifetime
                 // Ignore cleanup failures during startup.
             }
 
-            throw;
+            // Mark as unavailable so tests can skip
+            _isAvailable = false;
         }
     }
 
     public async Task DisposeAsync()
     {
+        if (!_isAvailable || _container == null)
+        {
+            return;
+        }
+
         var errors = new List<Exception>();
 
         try

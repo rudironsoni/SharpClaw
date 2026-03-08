@@ -1,12 +1,13 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpClaw.Execution.Docker;
 using SharpClaw.Execution.SandboxManager;
+using SharpClaw.TestCommon;
 
 namespace SharpClaw.Execution.Docker.IntegrationTests;
 
 public class DockerProviderIntegrationTests
 {
-    [Fact]
+    [DockerAvailable]
     public async Task StartDefaultAsync_UsesDindProvider()
     {
         var manager = new SandboxManagerService([new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance)], Microsoft.Extensions.Logging.Abstractions.NullLogger<SharpClaw.Execution.SandboxManager.SandboxManagerService>.Instance);
@@ -18,7 +19,7 @@ public class DockerProviderIntegrationTests
         Assert.True(manager.IsActive(runId));
     }
 
-    [Fact]
+    [DockerAvailable]
     public async Task StartDefaultAsync_RejectsDockerSocketMount()
     {
         var manager = new SandboxManagerService([new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance)], Microsoft.Extensions.Logging.Abstractions.NullLogger<SharpClaw.Execution.SandboxManager.SandboxManagerService>.Instance);
