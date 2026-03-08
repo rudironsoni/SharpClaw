@@ -10,7 +10,7 @@
           },
           {
             "type": "command",
-            "command": "$FACTORY_PROJECT_DIR/bash .rulesync/hooks/session-start.sh mcp-health",
+            "command": "$FACTORY_PROJECT_DIR/bash .rulesync/hooks/dotnet-agent-harness-session-start.sh mcp-health",
             "timeout": 30
           }
         ]
@@ -27,7 +27,7 @@
           },
           {
             "type": "command",
-            "command": "$FACTORY_PROJECT_DIR/bash .rulesync/hooks/slopwatch-advisory.sh",
+            "command": "$FACTORY_PROJECT_DIR/bash .rulesync/hooks/dotnet-agent-harness-slopwatch.sh",
             "timeout": 60
           }
         ]
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$FACTORY_PROJECT_DIR/bash .rulesync/hooks/inline-error-recovery.sh",
+            "command": "$FACTORY_PROJECT_DIR/bash .rulesync/hooks/dotnet-agent-harness-inline-error-recovery.sh",
             "timeout": 30
           }
         ]
