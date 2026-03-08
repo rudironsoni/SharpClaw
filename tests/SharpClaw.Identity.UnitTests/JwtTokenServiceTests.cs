@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using SharpClaw.Abstractions.Identity;
 using Xunit;
 
@@ -9,7 +10,13 @@ public class JwtTokenServiceTests
 
     public JwtTokenServiceTests()
     {
-        _tokenService = new JwtTokenService();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:SecretKey"] = "test-secret-key-that-is-at-least-32-characters-long"
+            })
+            .Build();
+        _tokenService = new JwtTokenService(configuration);
     }
 
     [Fact]
