@@ -27,12 +27,11 @@ public sealed class TokenBucketRateLimiter : IRateLimiter
             ReplenishTokens(entry);
 
             if (entry.Tokens >= permitCount)
-            {
-                entry.Tokens -= permitCount;
-                return new TokenBucketLease(true, null);
-            }
-
-            return new TokenBucketLease(false, CalculateRetryAfter(entry));
+        {
+            entry.Tokens -= permitCount;
+            return new TokenBucketLease(true, null);
+        }
+        return new TokenBucketLease(false, CalculateRetryAfter(entry));
         }
     }
 
